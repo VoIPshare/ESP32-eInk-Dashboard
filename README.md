@@ -56,7 +56,7 @@ This project is fully functional and includes several demo widgets to showcase i
 
 In the configure.h configure the PIN used to control the display, you will find my preference. If you are using a different display that what I used check the GxEPD2 library and configure it in the INO file.
 
-For the 2 files that I precompiled the ESP32 and ESP32-C6 and for the BW 7.5 display 
+For the 2 files that I precompiled the ESP32 and ESP32-C6 and for the BW 7.5 display, you can find them in https://github.com/VoIPshare/ESP32-eInk-Dashboard/releases, pick the file that is marked a merge, and use this site https://www.espboards.dev/tools/program/ with chrome or edge, remember to set the address to 0x0000  
 
 ESP32C6 -  EPD_CS    1, EPD_DC    8, EPD_RST   14, EPD_BUSY  7, EPD_SCK   23, EPD_MOSI  22, PIN_DISPLAYPOWER   4, BAT_PIN   0, DEMO_BUTTON GPIO_NUM_2
 ESP32 -    EPD_CS    15, EPD_DC    27, EPD_RST   26, EPD_BUSY  25, EPD_SCK   13, EPD_MOSI  14, PIN_DISPLAYPOWER   4, BAT_PIN   35

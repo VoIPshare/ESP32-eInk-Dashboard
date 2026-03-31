@@ -324,11 +324,12 @@ function weatherCodeToMDI(code) {
  * @returns {Array} Array of day objects: {sunrise, sunset, temp_max, temp_min, weather_code, icon}
  */
 function fetchOpenMeteo( maxRetries ) {
-  days = Math.min(Math.max(days || 1, 1), 7); // constrain between 1–7
-  maxRetries = maxRetries || 3;
   const latitude=getExtra(8,1);
   const longitude=getExtra(8,2);
-  const days=getExtra(8,3);
+  // const days=getExtra(8,3);
+
+  days = Math.min(Math.max(getExtra(8,3) || 1, 1), 7); // constrain between 1–7
+  maxRetries = maxRetries || 3;
 
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
               `&daily=weather_code,sunrise,sunset,temperature_2m_max,temperature_2m_min` +
@@ -409,8 +410,8 @@ function getTrackingInfo() {
   const colInserted = headers.indexOf("Inserted");
 
   const apiData = fetchAllShipments();
-  if (!apiData || !apiData.payload) return [];
 
+  if (!apiData || !apiData.payload) return [];
   const apiMap = {};
   apiData.payload.forEach(pkg => {
     apiMap[pkg.track_number] = pkg;
