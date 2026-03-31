@@ -6,7 +6,7 @@ on:
       version:
         description: "Firmware version"
         required: true
-        default: "62"
+        default: ".1"
 
 jobs:
   build:
@@ -100,7 +100,7 @@ jobs:
             --build-property "compiler.cpp.extra_flags=-DUSE_COLORDISPLAY=0" \
             --export-binaries \
             --output-dir ${{ matrix.build-dir }} \
-            ./ESP32_EPaper_DeskV3c6.ino
+            ./ESP32-eInk-Dashboard.ino
 
       # ------------------------------
       # Rename firmware to clean names
