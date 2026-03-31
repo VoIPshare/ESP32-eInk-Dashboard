@@ -1,0 +1,12 @@
+ID,Description,Active,PosX,PosY,Width,Height,Row_Height,Col_Width,Refresh,Group,Extra1,Extra2,Extra3,Extra4,Extra5
+1,Clock,TRUE,10,0,430,155,10,10,1,1,"EST5EDT,M3.2.0/2,M11.1.0/2",,,,
+2,Cal Events,TRUE,440,255,360,145,22,10,360,2,,,,,
+4,Stocks,TRUE,10,155,430,130,22,10,60,3,,,,,
+8,OpenMeteo,TRUE,10,285,430,105,0,100,360,4,44.501,-72.5674,4,,
+16,Tracking,TRUE,440,400,360,80,22,0,120,5,API_KEY_HERE,,,,
+32,Proxmox,FALSE,440,30,360,180,25,180,10,6,192.168.X.X:8006,readha@pam!mytoken=TOKENHERE,,,
+64,Bambu,TRUE,10,390,430,90,22,70,4,7,P2S,1782661941,50,,
+128,Battery,TRUE,440,0,360,28,,,60,8,,,,,
+256,Calendar,TRUE,440,25,360,230,28,210,60,9,,,,,
+512,MakerworkdStats,TRUE,440,395,360,85,22,0,15,7,,,,,
+

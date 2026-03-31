@@ -1,0 +1,149 @@
+name: Compile ESP32 Sketches
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Firmware version"
+        required: true
+        default: "62"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board: esp32:esp32:dfrobot_beetle_esp32c6
+            name: ESP32C6
+            build-dir: build_c6
+
+          - board: esp32:esp32:d32
+            name: ESP32D32
+            build-dir: build_d2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ------------------------------
+      # Cache Arduino packages
+      # ------------------------------
+      - name: Cache Arduino packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15/packages
+            ~/.arduino15/staging
+            ~/Arduino/libraries
+          key: arduino-${{ runner.os }}-esp32-v2
+          restore-keys: arduino-${{ runner.os }}-esp32-
+
+      # ------------------------------
+      # Arduino CLI
+      # ------------------------------
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 Arduino Core
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls \
+            https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      # ------------------------------
+      # Libraries
+      # ------------------------------
+      - name: Install required libraries
+        run: |
+          arduino-cli lib install \
+            "Adafruit GFX Library" \
+            "Adafruit BusIO" \
+            "GxEPD2" \
+            "ArduinoJson" \
+            "PubSubClient"
+
+      # ------------------------------
+      # Patches
+      # ------------------------------
+      - name: Patch GxEPD2 for ESP32
+        run: |
+          sed -i 's|#include <avr/pgmspace.h>|#include <pgmspace.h>|' \
+            ~/Arduino/libraries/GxEPD2/src/GxEPD2_EPD.cpp
+
+      - name: Patch Adafruit_BusIO for ESP32 core 3.x
+        run: |
+          FILE="$HOME/Arduino/libraries/Adafruit_BusIO/Adafruit_SPIDevice.h"
+          sed -i 's/SPI_BITORDER_MSBFIRST = SPI_MSBFIRST/SPI_BITORDER_MSBFIRST = MSBFIRST/' "$FILE"
+          sed -i 's/SPI_BITORDER_LSBFIRST = SPI_LSBFIRST/SPI_BITORDER_LSBFIRST = LSBFIRST/' "$FILE"
+
+      # ------------------------------
+      # Custom partition table
+      # ------------------------------
+      - name: Install custom partition table
+        run: |
+          PART_DIR=$(find ~/.arduino15/packages/esp32/hardware/esp32 -type d -name partitions | head -n 1)
+          cp $GITHUB_WORKSPACE/partitions.csv "$PART_DIR/partitions.csv"
+
+      # ------------------------------
+      # Compile
+      # ------------------------------
+      - name: Compile sketch
+        run: |
+          arduino-cli compile \
+            --fqbn ${{ matrix.board }} \
+            --build-property "build.custom_partitions=$GITHUB_WORKSPACE/partitions.csv" \
+            --build-property "upload.maximum_size=3604480" \
+            --build-property "compiler.cpp.extra_flags=-DUSE_COLORDISPLAY=0" \
+            --export-binaries \
+            --output-dir ${{ matrix.build-dir }} \
+            ./ESP32_EPaper_DeskV3c6.ino
+
+      # ------------------------------
+      # Rename firmware to clean names
+      # ------------------------------
+      - name: Rename firmware
+        run: |
+          mkdir firmware
+          cp ${{ matrix.build-dir }}/*.bin firmware/
+
+          cd firmware
+          for f in *.bin; do
+            mv "$f" "${{ matrix.name }}-$f"
+          done
+
+      # ------------------------------
+      # Upload artifact (still useful)
+      # ------------------------------
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-Firmware
+          path: firmware
+          retention-days: 365
+
+  # --------------------------------------------------
+  # Create release only if ALL builds succeeded
+  # --------------------------------------------------
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: firmware
+
+      - name: Create release and upload firmware
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: firmware-${{ github.event.inputs.version }}
+          name: ESP32 Firmware Build ${{ github.event.inputs.version }}
+          files: firmware/**/*.bin
