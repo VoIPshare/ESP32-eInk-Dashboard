@@ -753,29 +753,30 @@ void drawDemoScreen() {
   delay(3000);  // keep the demo visible
 }
 
-bool startWiFiReliable(const char* ssid, const char* password) {
-  for (int attempt = 1; attempt <= 2; attempt++) {
-    Serial.print("\nWiFi attempt ");
-    Serial.println(attempt);
+bool startWiFiReliable(const char* ssid, const char* password)
+{
+  for (int attempt = 1; attempt <= 2; attempt++)
+  {
+    Serial.printf("\nWiFi attempt %d\n", attempt);
 
-    // // --- Clean radio state ---
-    // WiFi.disconnect(true, true);
-    // delay(400 * attempt);
-    WiFi.disconnect(true);
-    delay(200);
-    // WiFi.mode(WIFI_OFF);
-    // delay(700 * attempt);  // very important after Zigbee/deep sleep
+    // Stop everything cleanly
+    WiFi.disconnect(true, true);
+    WiFi.mode(WIFI_OFF);
+    delay(800); 
 
+    // Restart WiFi
     WiFi.mode(WIFI_STA);
     WiFi.persistent(false);
     WiFi.setSleep(false);
     WiFi.setAutoReconnect(true);
+    delay(200);  
 
     WiFi.begin(ssid, password);
 
     unsigned long start = millis();
 
-    while (WiFi.status() != WL_CONNECTED) {
+    while (WiFi.status() != WL_CONNECTED)
+    {
       if (millis() - start > 20000)
         break;
 
@@ -783,21 +784,12 @@ bool startWiFiReliable(const char* ssid, const char* password) {
       Serial.print(".");
     }
 
-    if (WiFi.status() == WL_CONNECTED) {
+    if (WiFi.status() == WL_CONNECTED)
+    {
       Serial.println("\nWiFi connected!");
       Serial.println(WiFi.localIP());
       return true;
     }
-
-
-    // --- Clean radio state ---
-    WiFi.disconnect(true, true);
-    delay(400 * attempt);
-
-    WiFi.mode(WIFI_OFF);
-    delay(700 * attempt);  // very important after Zigbee/deep sleep
-
-
 
     Serial.println("\nFailed. Retrying...");
   }
