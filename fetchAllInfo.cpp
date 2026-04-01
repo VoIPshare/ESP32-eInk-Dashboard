@@ -14,7 +14,6 @@ WeatherData weather;
 
 MakerWorld makerworld;
 
-
 // Counts
 int layoutCount = 0;
 int stockCount = 0;
@@ -94,21 +93,12 @@ bool loadLayout() {
         item.Refresh = doc["Refresh"] | 0;
         item.Group = doc["Group"] | 0;
         item.Active = doc["Active"] | false;
-
-        // strncpy(item.Description, doc["Description"] | "", sizeof(item.Description));
-        // strncpy(item.Extra1, doc["Extra1"] | "", sizeof(item.Extra1));
-        // strncpy(item.Extra2, doc["Extra2"] | "", sizeof(item.Extra2));
-        // strncpy(item.Extra3, doc["Extra3"] | "", sizeof(item.Extra3));
-        // strncpy(item.Extra4, doc["Extra4"] | "", sizeof(item.Extra4));
-        // strncpy(item.Extra5, doc["Extra5"] | "", sizeof(item.Extra5));
-
         copyJsonString(item.Description, sizeof(item.Description), doc["Description"]);
         copyJsonString(item.Extra1, sizeof(item.Extra1), doc["Extra1"]);
         copyJsonString(item.Extra2, sizeof(item.Extra2), doc["Extra2"]);
         copyJsonString(item.Extra3, sizeof(item.Extra3), doc["Extra3"]);
         copyJsonString(item.Extra4, sizeof(item.Extra4), doc["Extra4"]);
         copyJsonString(item.Extra5, sizeof(item.Extra5), doc["Extra5"]);
-
     }
 
     prefs.end();
@@ -119,7 +109,6 @@ bool loadLayout() {
 // This endpoint is the "single source of truth" for layout + multi-widget data.
 // Layout is cached in Preferences so we can render something even when Wi-Fi fails.
 void fetchData() {
-    // Serial.println("Fecthing google data");
     stockCount = layoutCount = trackingCount = cal.eventCount = weather.count = 0;
 
     if (WiFi.status() != WL_CONNECTED) return;
@@ -129,7 +118,6 @@ void fetchData() {
     http.setTimeout(10000);
     http.begin( getApiUrl() );
 
-// Serial.println(getApiUrl() );
     int httpCode = http.GET();
     if (httpCode != 200) {
         Serial.printf("HTTP GET failed, code %d\n", httpCode);
@@ -148,9 +136,6 @@ void fetchData() {
     }
 
     http.end();
-
-    // Serial.println("Start extracting");
-
 
     // ----------------------- Parse Layout -----------------------
     // Layout drives widget placement, refresh cadence, and per-widget parameters (Extra1..Extra5).
@@ -257,8 +242,6 @@ void fetchData() {
         Serial.printf("Weather count %d\n", weather.count);
     }
 
-
-
     // ------------------ fetchData() update ------------------
     // After parsing weather, add:
 
@@ -274,15 +257,14 @@ void fetchData() {
         makerworld.lastUpdated = parseISO8601(ts);
         saveMakerWorld(); 
     }
-
     saveLayout();
 }
 
 
 #if DEBUG
 void debugPrintLayout() {
-    Serial.println("---- Layout Debug ----");
-    Serial.printf("Layout Count: %d\n", layoutCount);
+    DBG(F("---- Layout Debug ----"));
+    DBGF("Layout Count: %d", layoutCount);
 
     for (int i = 0; i < layoutCount; i++) {
         LayoutItem &l = layout[i];
@@ -439,7 +421,6 @@ void stockWidget( LayoutItem* item )
         y += item->RowHeight; // spacing between rows
     }
 }
-
 
 void trackingWidget( LayoutItem* item ) 
 {

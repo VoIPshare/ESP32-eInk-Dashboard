@@ -144,13 +144,7 @@ void bambuWidget(LayoutItem* item)
   int baseY = item->PosY;
   int y = baseY + item->RowHeight/2 + 5;
 
-  // // int id=findLayoutIndexByID( 64 );
-  // // LayoutItem &l=layout[id];
-
-  // int y=item->PosY + item->RowHeight/2+3;
-
   drawSparseString(&epaperFont, baseX, y, item->Extra1, GxEPD_BLACK );
-
 
   // Layers
   X_POS += 65;
@@ -172,16 +166,11 @@ void bambuWidget(LayoutItem* item)
   drawSparseString(&epaperFont, X_POS+25, y, buf,GxEPD_BLACK );
   drawSparseChar(&MDI_22_Sparse, X_POS, y+2, MDI_BED, GxEPD_BLACK);
 
-
   // Noozle
    X_POS+=75;
   sprintf(buf, "%.0f°", printer.nozzle_temp );  
   drawSparseString(&epaperFont, X_POS+25, y, buf,GxEPD_BLACK );
   drawSparseChar(&MDI_22_Sparse, X_POS, y+2, MDI_NOZZLE, GxEPD_BLACK);
-
-
-  // // Fan speed
-  // sprintf(buf, "%d/%d/%d/%d", printer.fan_speed, printer.cooling_fan_speed, printer.big_fan1_speed, printer.big_fan2_speed );  
 
   y+=item->RowHeight;
   X_POS=baseX;

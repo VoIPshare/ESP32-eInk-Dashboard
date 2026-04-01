@@ -7,14 +7,11 @@
 #include "fonts/epaperFont.h"
 #include "fonts/HighSpeed_130.h"
 
-
 void drawSparseCharCenter(const SparseGFXfont* , int16_t , int16_t , uint32_t , uint16_t );
 void drawSparseChar(const SparseGFXfont* , int16_t , int16_t , uint32_t , uint16_t );
 int16_t getSparseStringWidth(const SparseGFXfont* , const char* );
 void drawSparseString(const SparseGFXfont* , int16_t , int16_t , const char* , uint16_t );
-
 void drawSparseStringCentered(const SparseGFXfont* , int16_t , int16_t ,  const char* , uint16_t );
-
 
 #if USE_COLORDISPLAY
   #include <GxEPD2_4C.h>

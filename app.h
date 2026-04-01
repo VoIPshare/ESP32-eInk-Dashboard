@@ -12,8 +12,6 @@ extern uint16_t mqtt_port;
 extern String api_key;
 extern String apiUrl;
 
-// String getApiUrl();
-
 inline const char* getApiUrl() {
     static char url[200];
     if (api_key.length() == 0) return nullptr;

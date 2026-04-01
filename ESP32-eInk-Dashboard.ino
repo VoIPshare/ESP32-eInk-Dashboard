@@ -755,9 +755,10 @@ void drawDemoScreen() {
 
 bool startWiFiReliable(const char* ssid, const char* password)
 {
+  DBG(F("startWiFiReliable called"));
   for (int attempt = 1; attempt <= 2; attempt++)
   {
-    Serial.printf("\nWiFi attempt %d\n", attempt);
+    DBGF("\nWiFi attempt %d", attempt);
 
     // Stop everything cleanly
     WiFi.disconnect(true, true);
@@ -786,12 +787,12 @@ bool startWiFiReliable(const char* ssid, const char* password)
 
     if (WiFi.status() == WL_CONNECTED)
     {
-      Serial.println("\nWiFi connected!");
-      Serial.println(WiFi.localIP());
+      DBG(F("\nWiFi connected!") );
+      DBG(WiFi.localIP());
       return true;
     }
 
-    Serial.println("\nFailed. Retrying...");
+    DBG(F("\nFailed. Retrying..."));
   }
 
   return false;
@@ -801,22 +802,14 @@ bool startWiFiReliable(const char* ssid, const char* password)
 // Setup
 // =======================
 void setup() {
-  // bool needWiFi = false;
-  // #if DEBUG
-
   Serial.begin(115200);
 #if CONFIG_IDF_TARGET_ESP32
   delay(2000);
 #endif
-  //    WiFi.mode(WIFI_OFF);
-  delay(200);
 
   fullRefresh = (bootCount % (60 * 12) == 0);
 
-  // whatUpdated = 0;
-// #if DEBUG
-//   delay(700);
-// #endif
+
 // preferences.putString("api_key", "A");
   int wakeup_reason = esp_sleep_get_wakeup_cause();
 
@@ -856,7 +849,7 @@ void setup() {
   }
 
   // Serial.printf("Is Printing %d Prev %d\n", isPrinting, previousIsPrinting);
-  DBG(F("============= STARTING"));
+  DBG(F("============= STARTING ============="));
 
   bool hasStoredData = loadLayout();
   LayoutItem* infoClock = getLayout(1);
@@ -887,6 +880,7 @@ void setup() {
     }
   }
 #endif
+
   if (!hasStoredData) {
     DBG("No stored data → forcing full refresh");
     fullRefresh = true;
@@ -940,42 +934,22 @@ void setup() {
            || forceRefreshAfterDemo);
 
         calendarIf = shouldFetchRefresh(infoCalendar);
-
       }
 
-
-      if (bambuIf) {
-        DBG(F("Read bambulab"));
+      if (bambuIf) 
         fetchBambu(infoBambu);
-        // whatUpdated |= infoBambu->ID;
-      }
 
-      // if (openMeteoIf) {
-      //   // DBG( F("Read openMeteo") );
-      //   fetchOpenMeteo(infoOpenMeteo, 2);
-      //   whatUpdated |= infoOpenMeteo->ID;
-      // }
-
-      if (proxmoxIf) {
+      if (proxmoxIf) 
         fetchProxmoxStates(infoProxMox, 3);
-        // whatUpdated |= infoProxMox->ID;
-      }
-      // DBG( F("Finish Assignation") );
-      
-      // WiFi.mode(WIFI_OFF);
 
     } else {
       DBG("WiFi FAILED → using cached data");
-      // ESP.restart();
     }
     WiFi.disconnect(true);
+    delay(200);
     WiFi.mode(WIFI_OFF);
   }
 
-
-
-
-  //  DBG(F("Testing zigbee"));
 #if USE_ZIGBEE
   // This is to test, will be moved in the bambulab
   activateCoordinatorReadAndClose(true);
@@ -1005,11 +979,9 @@ void setup() {
     display.fillScreen(GxEPD_WHITE);
     display.firstPage();
 
-    // Serial.println(forceRefreshAfterDemo);
     Serial.printf("ProxMoxIF %d BambuIF %d openMeteoIF %d EventIF %d StocksIF %d TrackingIF %d CalendarIF %d\n", proxmoxIf, bambuIf, openMeteoIf, eventIf, stocksIf, trackingIf, calendarIf );
     do {
       if (proxmoxIf) proxmoxWidget(infoProxMox);
-      // DBG("bambuIf");
 
       if (bambuIf)
       {
@@ -1023,25 +995,19 @@ void setup() {
         }
       }
 
-      // DBG("updateClock");
       updateClock(infoClock);
-      // DBG("openMeteoIf");
+
       if (openMeteoIf) weatherWidget(infoOpenMeteo);
-      // DBG("drawStatus");
+
       #ifdef BAT_PIN
       drawStatus(infoBattery);
       #endif
-      // DBG("Events");
+
       if (eventIf) gCalWidget(infoEvent);
-      // DBG("stocksIf");
       if (stocksIf) stockWidget(infoStocks);
-      // DBG("trackingIf");
       if (trackingIf) trackingWidget(infoTracking);
-      // DBG("calendarIf");
       if (calendarIf) drawCalendar(infoCalendar);
-      // updateClock(infoClock);
     } while (display.nextPage());
-    // updatePartial(infoBattery, drawStatus);
 
     DBG(F("Finish full"));
   }
@@ -1054,11 +1020,10 @@ void setup() {
     if (openMeteoIf)
       updatePartial(infoOpenMeteo, weatherWidget);
 
-
     if (bambuIf)
     {
       if( !isPrinting && !previousIsPrinting )
-          updatePartial(infoBambu, makerWorldWidget);
+        updatePartial(infoBambu, makerWorldWidget);
       else if (bambuIf)
         updatePartial(infoBambu, bambuWidget);
     }
@@ -1077,6 +1042,7 @@ void setup() {
 
     if (calendarIf)
       updatePartial(infoCalendar, drawCalendar);
+
 #ifdef BAT_PIN
     if (batteryIf || forceUpdateStatusBar)
       updatePartial(infoBattery, drawStatus);
@@ -1091,6 +1057,7 @@ if (getLocalTime(&timeinfo))
     seconds_to_sleep = 61 - timeinfo.tm_sec;
 else
   DBG(F("NTP not synced, sleeping 60s"));
+
   // display.hibernate();
 
 #ifdef PIN_DISPLAYPOWER
