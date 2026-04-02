@@ -6,7 +6,7 @@
 #define DEBUG 1   // set to 1 to enable debug prints
 #endif
 
-#define USE_ZIGBEE 0
+#define USE_ZIGBEE 1
 
 #if DEBUG
   #define DBG(x)            Serial.println(x)
