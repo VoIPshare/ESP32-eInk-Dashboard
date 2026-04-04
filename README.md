@@ -67,7 +67,7 @@ Add:
 - Google script ID
 - MQTT Information (Pass, Serial Number, IP and port)
 
-These values are saved on the device (you do **not** need a `secrets.h` file or a recompile to set or change them).
+These values are saved on the device.
 
 This configuration will be reset everytime you upload a new image, if you choose so.
 
