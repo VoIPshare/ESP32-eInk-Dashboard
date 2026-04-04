@@ -67,6 +67,8 @@ Add:
 - Google script ID
 - MQTT Information (Pass, Serial Number, IP and port)
 
+These values are saved on the device (you do **not** need a `secrets.h` file or a recompile to set or change them).
+
 This configuration will be reset everytime you upload a new image, if you choose so.
 
 ---
@@ -106,9 +108,10 @@ A Google Apps Script is used to centralize data:
 
 1. Create a new Apps Script project  
 2. Add your script  
-3. Click **Deploy → New Deployment → Web App**
+3. Click **Deploy → New Deployment → Web App** and note the published URL. It looks like  
+   `https://script.google.com/macros/s/<SCRIPT_ID>/exec` — the `<SCRIPT_ID>` segment is what the firmware expects.
 
-   Use the secret and insert in the secrets.h file before compiling
+**On the device (no recompile):** After flashing, connect to the setup Wi‑Fi and open the configuration page (see **Setup Guide** above). Enter that **Google Script ID** together with your Wi‑Fi and MQTT settings. You can change it later from the same portal without rebuilding firmware.
 
 ---
 
