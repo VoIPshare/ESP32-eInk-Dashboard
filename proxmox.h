@@ -8,14 +8,16 @@ struct Proxmox {
 };
 
 struct ProxmoxHost {
-  String name;
+  char name[CFG_PROXMOX_NAME_MAX];
   uint32_t status;
 
-  // Parameterized constructor
-  ProxmoxHost() : name(""), status(0) {}
+  ProxmoxHost() : status(0) { name[0] = '\0'; }
 
-  // Parameterized constructor
-  ProxmoxHost(const String& n, uint32_t s) : name(n), status(s) {}
+  ProxmoxHost(const char* n, uint32_t s) : status(s) {
+    if (!n) n = "";
+    strncpy(name, n, sizeof(name) - 1);
+    name[sizeof(name) - 1] = '\0';
+  }
 };
 
 void fetchProxmoxStates(LayoutItem* , int );

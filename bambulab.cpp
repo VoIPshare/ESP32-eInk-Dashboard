@@ -40,10 +40,11 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   printer.error = print["err"].as<int>() | 0;
   
-  snprintf(printer.gcode_state, sizeof(printer.gcode_state), "%s", print["gcode_state"].as<String>() );
+  copyJsonString(printer.gcode_state, sizeof(printer.gcode_state), print["gcode_state"]);
 
   // Serial.printf("Perc %d isPrinting %d Prev %d  Status %s\n", printer.percent, isPrinting, previousIsPrinting, printer.gcode_state);
   // Persist printing state across deep sleep so we can refresh more frequently mid-print.
+  Serial.println( printer.gcode_state );
   if( ( printer.gcode_state && (strcmp(printer.gcode_state,"RUNNING")==0||  strcmp(printer.gcode_state,"PREPARE")==0 ) || strcmp(printer.gcode_state,"PAUSE")   == 0 ) || ( printer.percent <100 && printer.percent >0 ) )
     isPrinting=true;
   else
@@ -112,7 +113,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
           strncpy(t.weight, weight, WEIGHT_LEN);
           t.weight[WEIGHT_LEN - 1] = '\0';
 
-          snprintf(t.tray_type, sizeof(t.tray_type), "%s", trayObj["tray_type"].as<String>());
+          copyJsonString(t.tray_type, sizeof(t.tray_type), trayObj["tray_type"]);
 
           t.state=trayObj["state"].as<int>();
 
@@ -244,10 +245,11 @@ static void connectMqtt( LayoutItem * infoBambu) {
   uint8_t retries = 0;
   while (!client.connected() && retries < 5 ) {
       DBG( F("[Bambu]: Connecting to MQTT...") );
-      if (client.connect("ESP32_Bambu", "bblp", mqtt_pass.c_str()  )) {
+      if (client.connect("ESP32_Bambu", "bblp", mqtt_pass)) {
           DBG( F("[Bambu]: connected") );
-          String reportTopic = "device/" + mqtt_sn + "/report";
-          client.subscribe(reportTopic.c_str());
+          char reportTopic[96];
+          snprintf(reportTopic, sizeof(reportTopic), "device/%s/report", mqtt_sn);
+          client.subscribe(reportTopic);
       } else {
         DBGF("[Bambu]: MQTT fail rc=%d retry %d/5\n", client.state(), retries+1);
         retries++;
@@ -262,10 +264,10 @@ static void connectMqtt( LayoutItem * infoBambu) {
 void fetchBambu(  LayoutItem* infoBambu  )
 {
   DBG( F("[Bambu] Fetching"));
-    DBGF("[Bambu] MQTT Pass %s MQTT_SN %s MQTT_IP %s MQTT_PORT %d", mqtt_pass.c_str(), mqtt_sn.c_str(), mqtt_ip.c_str(), mqtt_port );
+    DBGF("[Bambu] MQTT Pass %s MQTT_SN %s MQTT_IP %s MQTT_PORT %d", mqtt_pass, mqtt_sn, mqtt_ip, mqtt_port );
 
   // This will create a widget strange, I need to return something
-  if( mqtt_pass == "" || mqtt_sn == ""  || mqtt_ip == "" || mqtt_port==0 )
+  if (mqtt_pass[0] == '\0' || mqtt_sn[0] == '\0' || mqtt_ip[0] == '\0' || mqtt_port == 0)
   {
     DBG("[Bambu]: Missing some parametes such pass, sn, ip or port");
     return;
@@ -275,8 +277,8 @@ void fetchBambu(  LayoutItem* infoBambu  )
   // NOTE: setInsecure() disables certificate validation (MITM risk).
   wifiClient.setInsecure();
   client.setBufferSize(20000);
-  DBGF("[Bambu]: IP %s Port %d\n", mqtt_ip.c_str(), mqtt_port  );
-  client.setServer( mqtt_ip.c_str(), mqtt_port );
+  DBGF("[Bambu]: IP %s Port %d\n", mqtt_ip, mqtt_port );
+  client.setServer(mqtt_ip, mqtt_port);
   client.setCallback(callback);
   connectMqtt( infoBambu );
   unsigned long start = millis();

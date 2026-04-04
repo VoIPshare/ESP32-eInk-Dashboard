@@ -1,5 +1,6 @@
 #include "app.h"
 #include <WiFi.h>
+#include "esp_wifi.h"
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -10,7 +11,13 @@
 #include "calendar.h"
 #include <WebServer.h>
 #include <Preferences.h>
+#include <cstring>
 
+static void copyToCfg(char* dest, size_t cap, const String& s) {
+  if (!dest || cap == 0) return;
+  strncpy(dest, s.c_str(), cap - 1);
+  dest[cap - 1] = '\0';
+}
 
 #if USE_ZIGBEE
 // #warning "ZIGBEE HEADER INCLUDED"
@@ -20,13 +27,13 @@
 WebServer server(80);
 Preferences preferences;
 
-String wifi_ssid;
-String wifi_pass;
-String mqtt_pass;
-String mqtt_sn;
-String mqtt_ip;
+char wifi_ssid[CFG_WIFI_SSID_MAX];
+char wifi_pass[CFG_WIFI_PASS_MAX];
+char mqtt_pass[CFG_MQTT_PASS_MAX];
+char mqtt_sn[CFG_MQTT_SN_MAX];
+char mqtt_ip[CFG_MQTT_IP_MAX];
 uint16_t mqtt_port;
-String api_key;
+char googleapi[CFG_GOOGLEAPI_MAX];
 
 bool forceUpdateStatusBar = false;
 bool forceRefreshAfterDemo = false;
@@ -35,10 +42,10 @@ bool forceRefreshAfterDemo = false;
 bool zigbee_enable = false;
 bool zigbee_wait = true;
 
-String zigbee_monitor;
+char zigbee_monitor[CFG_ZIGBEE_STR_MAX];
 uint8_t zigbee_monitor_ep = 1;
 
-String zigbee_control;
+char zigbee_control[CFG_ZIGBEE_STR_MAX];
 uint8_t zigbee_control_ep = 1;
 #endif
 
@@ -55,220 +62,161 @@ constexpr float BAT_MAX_V = 3.9f;
 /* --------------------------------------------------
    HTML PAGE (stored in flash to save RAM)
    -------------------------------------------------- */
-const char PAGE_HTML_START[] PROGMEM = R"rawliteral(
+
+String buildPage()
+{
+  char options[3072];
+  options[0] = '\0';
+  size_t optOff = 0;
+  int n = WiFi.scanNetworks();
+  for (int i = 0; i < n && i < 48; i++)
+  {
+    const char* ssid = WiFi.SSID(i).c_str();
+    int w = snprintf(options + optOff, sizeof(options) - optOff,
+                     "<option value='%s'>%s</option>", ssid, ssid);
+    if (w < 0 || (size_t)w >= sizeof(options) - optOff) break;
+    optOff += (size_t)w;
+  }
+
+  String html = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ESP32 Configuration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 Calendar Setup</title>
 
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-
-:root{
---bg:#0d1117;
---card:#161b22;
---border:#30363d;
---accent:#58a6ff;
---accent2:#3fb950;
---muted:#8b949e;
---text:#e6edf3
-}
-
 body{
-background:var(--bg);
-color:var(--text);
-font-family:Courier New,monospace;
-min-height:100vh;
-display:flex;
-align-items:center;
-justify-content:center;
-padding:16px
+  font-family: Arial, Helvetica, sans-serif;
+  background:#f4f6f8;
+  margin:0;
 }
 
-.card{
-width:100%;
-max-width:420px;
-background:var(--card);
-border:1px solid var(--border);
-border-radius:10px;
-overflow:hidden;
-box-shadow:0 8px 32px rgba(0,0,0,.5)
+.container{
+  max-width:420px;
+  margin:40px auto;
+  background:white;
+  padding:25px;
+  border-radius:12px;
+  box-shadow:0 6px 18px rgba(0,0,0,0.1);
 }
 
-.header{
-padding:14px 18px;
-border-bottom:1px solid var(--border);
-display:flex;
-align-items:center;
-gap:10px
-}
-
-h1{
-font-size:13px;
-text-transform:uppercase
-}
-
-.section{
-padding:14px 18px;
-border-top:1px solid var(--border)
-}
-
-.section h3{
-font-size:12px;
-margin-bottom:10px;
-color:var(--accent)
+h2{
+  text-align:center;
+  margin-bottom:25px;
+  color:#333;
 }
 
 label{
-font-size:10px;
-color:var(--muted);
-display:block;
-margin-top:10px
+  font-weight:600;
+  font-size:14px;
 }
 
-input{
-width:100%;
-background:var(--bg);
-border:1px solid var(--border);
-color:var(--text);
-padding:7px;
-border-radius:5px;
-margin-top:4px;
-font-size:12px
-}
-
-input:focus{
-outline:none;
-border-color:var(--accent)
-}
-
-.row{
-display:flex;
-gap:10px
-}
-
-.row input{
-flex:1
-}
-
-.checkbox{
-display:flex;
-align-items:center;
-gap:8px;
-margin-top:10px
-}
-
-.checkbox input{
-width:auto
+input, select{
+  width:100%;
+  padding:10px;
+  margin-top:6px;
+  margin-bottom:18px;
+  border:1px solid #ccc;
+  border-radius:8px;
+  font-size:14px;
 }
 
 button{
-width:100%;
-background:var(--accent);
-color:#0d1117;
-border:none;
-border-radius:6px;
-font-weight:700;
-padding:10px;
-cursor:pointer;
-margin-top:18px;
-font-size:12px
+  width:100%;
+  padding:12px;
+  border:none;
+  border-radius:10px;
+  background:#007bff;
+  color:white;
+  font-size:16px;
+  font-weight:bold;
+  cursor:pointer;
 }
 
 button:hover{
-background:#79c0ff
+  background:#0056b3;
+}
+
+.scanBtn{
+  background:#28a745;
+  margin-bottom:15px;
 }
 
 .footer{
-text-align:center;
-font-size:9px;
-color:var(--muted);
-padding:10px
+  text-align:center;
+  margin-top:15px;
+  font-size:12px;
+  color:#777;
 }
 </style>
+
+<script>
+function validateForm(){
+  const ssid = document.getElementById("wifi_ssid").value;
+  if(ssid.length === 0){
+    alert("WiFi SSID cannot be empty");
+    return false;
+  }
+  return true;
+}
+</script>
 </head>
 
 <body>
 
-<div class="card">
+<div class="container">
+  <h2>ESP32 Calendar Setup</h2>
 
-<div class="header">
-<h1>ESP32 Configuration</h1>
-</div>
+  <form action="/save" method="POST" onsubmit="return validateForm();">
 
-<form method="POST" action="/save">
-
-<div class="section">
-<h3>WiFi</h3>
-
-<label>WiFi SSID</label>
-<input name="wifi_ssid" placeholder="MyWiFi">
-
-<label>WiFi Password</label>
-<input name="wifi_pass" >
-</div>
-
-<div class="section">
-<h3>Google Script</h3>
-
-<label>API Key</label>
-<input name="api_key" placeholder="Enter your Google Script key">
-</div>
-
-<div class="section">
-<h3>Printer (MQTT)</h3>
-
-<label>MQTT IP</label>
-<input name="mqtt_ip" placeholder="192.168.1.10">
-
-<div class="row">
-<input name="mqtt_port" placeholder="Port">
-<input name="mqtt_sn" placeholder="Serial number">
-</div>
-
-<label>MQTT Password</label>
-<input name="mqtt_pass">
-</div>
-
-
+    <label>Available WiFi Networks</label>
+    <select id="wifi_ssid" name="wifi_ssid">
 )rawliteral";
 
+html += options;
 
+html += R"rawliteral(
+    </select>
 
-#if USE_ZIGBEE
-const char PAGE_HTML_ZIGBEE[] PROGMEM = R"rawliteral(
-<div class="section">
-<h3>Zigbee</h3>
+    <button class="scanBtn" type="button" onclick="location.reload()">Scan Again</button>
 
-<div class="checkbox">
-<input type="checkbox" name="zigbee_enable">
-<label>Enable Zigbee</label>
-</div>
+    <label>WiFi Password</label>
+    <input  name="wifi_pass" placeholder="Enter WiFi password">
 
-</div>
-)rawliteral";
-#else
-const char PAGE_HTML_ZIGBEE[] PROGMEM = "";
-#endif
+    <label>Google Script ID</label>
+    <input name="googleapi" placeholder="Paste Google Apps Script ID">
 
-const char PAGE_HTML_END[] PROGMEM = R"rawliteral(
-<div class="section">
-<button type="submit">SAVE CONFIGURATION</button>
-</div>
+    <hr>
 
-<div class="footer">
-ESP32 Dashboard Setup
-</div>
+    <label>MQTT Server IP</label>
+    <input name="mqtt_ip" placeholder="192.168.1.100">
 
-</form>
+    <label>MQTT Port</label>
+    <input name="mqtt_port" placeholder="1883">
+
+    <label>MQTT Username</label>
+    <input name="mqtt_sn" placeholder="Username">
+
+    <label>MQTT Password</label>
+    <input name="mqtt_pass" placeholder="Password">
+
+    <button type="submit">Save Configuration</button>
+
+  </form>
+
+  <div class="footer">
+    Device will restart after saving
+  </div>
 </div>
 
 </body>
 </html>
 )rawliteral";
 
+  return html;
+}
 
 #if USE_COLORDISPLAY
 // 7.5" 4-color panel (GDEM075F52)
@@ -476,13 +424,14 @@ float readBattery() {
 
 void drawStatus(LayoutItem* item) {
   #ifdef  BAT_PIN
-  DBG(F("Battery"));
+  DBG(F("Battery Draw"));
 
   float voltage = readBattery();
-  // Serial.println(voltage);
+  Serial.println(voltage);
+
   char buf[20];
   snprintf(buf, sizeof(buf), "%.2f V", voltage);
-
+  
   display.fillRect(item->PosX, item->PosY, item->Width, item->Height, GxEPD_WHITE);
 
   drawSparseString(&epaperFont, item->PosX, item->PosY + 16, buf, GxEPD_BLACK);
@@ -540,33 +489,33 @@ bool shouldFetchRefresh(LayoutItem* item) {
   return ( (bootCount % item->Refresh) == 0 || forceRefreshAfterDemo );
 }
 
-void handleRoot() {
-  String page = FPSTR(PAGE_HTML_START);
-  page += FPSTR(PAGE_HTML_ZIGBEE);
-  page += FPSTR(PAGE_HTML_END);
+void handleConfig() {
+  // String page = FPSTR(PAGE_HTML_START);
+  // page += FPSTR(PAGE_HTML_ZIGBEE);
+  // page += FPSTR(PAGE_HTML_END);
 
-  server.send(200, "text/html", page);
+  server.send(200, "text/html", buildPage());
 }
 
 void handleSave() {
-  wifi_ssid = server.arg("wifi_ssid");
-  wifi_pass = server.arg("wifi_pass");
-  api_key = server.arg("api_key");
+  copyToCfg(wifi_ssid, sizeof(wifi_ssid), server.arg("wifi_ssid"));
+  copyToCfg(wifi_pass, sizeof(wifi_pass), server.arg("wifi_pass"));
+  copyToCfg(googleapi, sizeof(googleapi), server.arg("googleapi"));
+// Serial.printf("Wifi %s Pass %s", wifi_ssid, wifi_pass);
 
-
-  mqtt_pass = server.arg("mqtt_pass");
-  mqtt_sn = server.arg("mqtt_sn");
-  mqtt_ip = server.arg("mqtt_ip");
+  copyToCfg(mqtt_pass, sizeof(mqtt_pass), server.arg("mqtt_pass"));
+  copyToCfg(mqtt_sn, sizeof(mqtt_sn), server.arg("mqtt_sn"));
+  copyToCfg(mqtt_ip, sizeof(mqtt_ip), server.arg("mqtt_ip"));
   mqtt_port = server.arg("mqtt_port").toInt();
-
+Serial.printf("MQTT P: %s SN: %s IP %s\n", server.arg("mqtt_pass"), server.arg("mqtt_sn").c_str(), server.arg("mqtt_ip").c_str());
 #if USE_ZIGBEE
   zigbee_enable = server.hasArg("zigbee_enable");
   zigbee_wait = server.hasArg("zigbee_wait");
 
-  zigbee_monitor = server.arg("zigbee_monitor");
+  copyToCfg(zigbee_monitor, sizeof(zigbee_monitor), server.arg("zigbee_monitor"));
   zigbee_monitor_ep = server.arg("zigbee_monitor_ep").toInt();
 
-  zigbee_control = server.arg("zigbee_control");
+  copyToCfg(zigbee_control, sizeof(zigbee_control), server.arg("zigbee_control"));
   zigbee_control_ep = server.arg("zigbee_control_ep").toInt();
 #endif
 
@@ -574,7 +523,7 @@ void handleSave() {
 
   preferences.putString("wifi_ssid", wifi_ssid);
   preferences.putString("wifi_pass", wifi_pass);
-  preferences.putString("api_key", api_key);
+  preferences.putString("googleapi", googleapi);
 
   preferences.putString("mqtt_pass", mqtt_pass);
   preferences.putString("mqtt_sn", mqtt_sn);
@@ -593,9 +542,99 @@ void handleSave() {
 #endif
   preferences.end();
 
-  server.send(200, "text/html", "<h2>Saved. Rebooting...</h2>");
-  delay(1500);
-  ESP.restart();
+server.send(200, "text/html", R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saved</title>
+
+<style>
+body{
+  margin:0;
+  font-family: Arial, Helvetica, sans-serif;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  color:black;
+}
+
+.card{
+  background: rgba(255,255,255,0.1);
+  backdrop-filter: blur(10px);
+  padding:30px;
+  border-radius:16px;
+  text-align:center;
+  box-shadow:0 8px 25px rgba(0,0,0,0.2);
+  max-width:320px;
+}
+
+h2{
+  margin-bottom:10px;
+}
+
+p{
+  margin-top:5px;
+  font-size:14px;
+  opacity:0.9;
+}
+
+.spinner{
+  margin:20px auto;
+  width:40px;
+  height:40px;
+  border:4px solid rgba(255,255,255,0.3);
+  border-top:4px solid white;
+  border-radius:50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin{
+  100% { transform: rotate(360deg); }
+}
+
+.countdown{
+  margin-top:10px;
+  font-size:13px;
+  opacity:0.8;
+}
+</style>
+
+<script>
+let seconds = 3;
+function updateCountdown(){
+  document.getElementById("count").innerText = seconds;
+  if(seconds > 0){
+    seconds--;
+    setTimeout(updateCountdown, 1000);
+  }
+}
+window.onload = updateCountdown;
+</script>
+</head>
+
+<body>
+
+<div class="card">
+  <h2>✅ Configuration Saved</h2>
+  <p>Your device will reboot shortly</p>
+
+  <div class="spinner"></div>
+
+  <div class="countdown">
+    Rebooting in <span id="count">3</span> seconds...
+  </div>
+</div>
+
+</body>
+</html>
+)rawliteral");
+
+delay(3000);
+ESP.restart();
+
 }
 
 
@@ -647,55 +686,10 @@ void startAP() {
 
   Serial.println("AP Started. Connect and go to 192.168.4.1");
 
-  server.on("/", handleRoot);
+  server.on("/", handleConfig);
   server.on("/save", HTTP_POST, handleSave);
   server.begin();
 }
-
-
-// void ScanWiFi() {
-//   Serial.println("Scan start");
-//   // WiFi.scanNetworks will return the number of networks found.
-//   int n = WiFi.scanNetworks();
-//   Serial.println("Scan done");
-//   if (n == 0) {
-//     Serial.println("no networks found");
-//   } else {
-//     Serial.print(n);
-//     Serial.println(" networks found");
-//     Serial.println("Nr | SSID                             | RSSI | CH | Encryption");
-//     for (int i = 0; i < n; ++i) {
-//       // Print SSID and RSSI for each network found
-//       Serial.printf("%2d", i + 1);
-//       Serial.print(" | ");
-//       Serial.printf("%-32.32s", WiFi.SSID(i).c_str());
-//       Serial.print(" | ");
-//       Serial.printf("%4ld", WiFi.RSSI(i));
-//       Serial.print(" | ");
-//       Serial.printf("%2ld", WiFi.channel(i));
-//       Serial.print(" | ");
-//       switch (WiFi.encryptionType(i)) {
-//         case WIFI_AUTH_OPEN:            Serial.print("open"); break;
-//         case WIFI_AUTH_WEP:             Serial.print("WEP"); break;
-//         case WIFI_AUTH_WPA_PSK:         Serial.print("WPA"); break;
-//         case WIFI_AUTH_WPA2_PSK:        Serial.print("WPA2"); break;
-//         case WIFI_AUTH_WPA_WPA2_PSK:    Serial.print("WPA+WPA2"); break;
-//         case WIFI_AUTH_WPA2_ENTERPRISE: Serial.print("WPA2-EAP"); break;
-//         case WIFI_AUTH_WPA3_PSK:        Serial.print("WPA3"); break;
-//         case WIFI_AUTH_WPA2_WPA3_PSK:   Serial.print("WPA2+WPA3"); break;
-//         case WIFI_AUTH_WAPI_PSK:        Serial.print("WAPI"); break;
-//         default:                        Serial.print("unknown");
-//       }
-//       Serial.println();
-//       delay(10);
-//     }
-//   }
-
-//   // Delete the scan result to free memory for code below.
-//   WiFi.scanDelete();
-//   Serial.println("-------------------------------------");
-// }
-
 
 // Should serparate it in order to force also reading the layout
 void drawDemoScreen() {
@@ -756,21 +750,25 @@ void drawDemoScreen() {
 bool startWiFiReliable(const char* ssid, const char* password)
 {
   DBG(F("startWiFiReliable called"));
+
   for (int attempt = 1; attempt <= 2; attempt++)
   {
     DBGF("\nWiFi attempt %d", attempt);
 
-    // Stop everything cleanly
+    // FULL STOP FIRST
     WiFi.disconnect(true, true);
     WiFi.mode(WIFI_OFF);
-    delay(800); 
+    delay(500);
 
-    // Restart WiFi
+    // THEN re-init cleanly
     WiFi.mode(WIFI_STA);
+    delay(100);
+
     WiFi.persistent(false);
+    WiFi.setAutoReconnect(false);   // IMPORTANT: disable during manual connect
     WiFi.setSleep(false);
-    WiFi.setAutoReconnect(true);
-    delay(200);  
+
+    delay(500);
 
     WiFi.begin(ssid, password);
 
@@ -787,16 +785,78 @@ bool startWiFiReliable(const char* ssid, const char* password)
 
     if (WiFi.status() == WL_CONNECTED)
     {
-      DBG(F("\nWiFi connected!") );
+      DBG(F("\nWiFi connected!"));
       DBG(WiFi.localIP());
+
+      WiFi.setAutoReconnect(true); // enable AFTER connection
       return true;
     }
 
     DBG(F("\nFailed. Retrying..."));
   }
 
+  // Final cleanup
+  WiFi.disconnect(true, true);
+  WiFi.mode(WIFI_OFF);
+
   return false;
 }
+
+// bool startWiFiReliable(const char* ssid, const char* password)
+// {
+//   Serial.println("startWiFiReliable called");
+
+//   WiFi.mode(WIFI_OFF);
+//   delay(500);
+//   WiFi.mode(WIFI_STA);
+//   delay(300);
+
+//   // Force WPA2 only, disable WPA3/PMF entirely
+//   wifi_config_t wifi_cfg = {};
+//   strncpy((char*)wifi_cfg.sta.ssid,     ssid,     sizeof(wifi_cfg.sta.ssid)     - 1);
+//   strncpy((char*)wifi_cfg.sta.password, password, sizeof(wifi_cfg.sta.password) - 1);
+
+//   wifi_cfg.sta.threshold.authmode  = WIFI_AUTH_WPA2_PSK;
+//   wifi_cfg.sta.pmf_cfg.capable     = false;
+//   wifi_cfg.sta.pmf_cfg.required    = false;
+//   wifi_cfg.sta.sae_pwe_h2e         = WPA3_SAE_PWE_UNSPECIFIED; // disable SAE/WPA3
+
+//   // Force 802.11 b/g/n only — skip WiFi 6 (ax) negotiation
+//   esp_wifi_set_protocol(WIFI_IF_STA,
+//     WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+
+//   esp_wifi_set_ps(WIFI_PS_NONE);
+//   esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg);
+
+//   // Static IP — keeps DHCP out of the equation
+//   IPAddress local_IP(192, 168, 50, 20);
+//   IPAddress gateway(192, 168, 50, 1);
+//   IPAddress subnet(255, 255, 255, 0);
+//   IPAddress dns(8, 8, 8, 8);
+//   WiFi.config(local_IP, gateway, subnet, dns);
+
+//   WiFi.persistent(false);
+//   WiFi.begin(ssid, password);
+
+//   unsigned long start = millis();
+//   while (WiFi.status() != WL_CONNECTED)
+//   {
+//     if (millis() - start > 20000) break;
+//     delay(500);
+//     Serial.printf(" [%d]", WiFi.status());
+//   }
+
+//   Serial.printf("\nFinal status: %d\n", WiFi.status());
+
+//   if (WiFi.status() == WL_CONNECTED)
+//   {
+//     Serial.printf("Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+//     return true;
+//   }
+
+//   WiFi.mode(WIFI_OFF);
+//   return false;
+// }
 
 // =======================
 // Setup
@@ -807,10 +867,10 @@ void setup() {
   delay(2000);
 #endif
 
-  fullRefresh = (bootCount % (60 * 12) == 0);
+  fullRefresh = (bootCount % (60 * 24) == 0);
 
 
-// preferences.putString("api_key", "A");
+// preferences.putString("googleapi", "A");
   int wakeup_reason = esp_sleep_get_wakeup_cause();
 
   switch (wakeup_reason) {
@@ -823,27 +883,41 @@ void setup() {
   }
 
   preferences.begin("config", true);
-  wifi_ssid = preferences.getString("wifi_ssid", "");
-  wifi_pass = preferences.getString("wifi_pass", "");
-  mqtt_pass = preferences.getString("mqtt_pass", "");
-  mqtt_sn = preferences.getString("mqtt_sn", "");
-  mqtt_ip = preferences.getString("mqtt_ip", "");
+  memset(wifi_ssid, 0, sizeof(wifi_ssid));
+  memset(wifi_pass, 0, sizeof(wifi_pass));
+  memset(mqtt_pass, 0, sizeof(mqtt_pass));
+  memset(mqtt_sn, 0, sizeof(mqtt_sn));
+  memset(mqtt_ip, 0, sizeof(mqtt_ip));
+  memset(googleapi, 0, sizeof(googleapi));
+  preferences.getString("wifi_ssid", wifi_ssid, sizeof(wifi_ssid));
+  preferences.getString("wifi_pass", wifi_pass, sizeof(wifi_pass));
+  preferences.getString("mqtt_pass", mqtt_pass, sizeof(mqtt_pass));
+  preferences.getString("mqtt_sn", mqtt_sn, sizeof(mqtt_sn));
+  preferences.getString("mqtt_ip", mqtt_ip, sizeof(mqtt_ip));
   mqtt_port = preferences.getUInt("mqtt_port", 8883);
-  api_key = preferences.getString("api_key", "");
+  preferences.getString("googleapi", googleapi, sizeof(googleapi));
 
 #if USE_ZIGBEE
   zigbee_enable = preferences.getBool("zigbee_enable", false);
   zigbee_wait = preferences.getBool("zigbee_wait", true);
 
-  zigbee_monitor = preferences.getString("zigbee_monitor", "0");
-  zigbee_control = preferences.getString("zigbee_control", "0");
+  memset(zigbee_monitor, 0, sizeof(zigbee_monitor));
+  memset(zigbee_control, 0, sizeof(zigbee_control));
+  preferences.getString("zigbee_monitor", zigbee_monitor, sizeof(zigbee_monitor));
+  if (zigbee_monitor[0] == '\0') {
+    strncpy(zigbee_monitor, "0", sizeof(zigbee_monitor) - 1);
+  }
+  preferences.getString("zigbee_control", zigbee_control, sizeof(zigbee_control));
+  if (zigbee_control[0] == '\0') {
+    strncpy(zigbee_control, "0", sizeof(zigbee_control) - 1);
+  }
 #endif
 
   preferences.end();
   delay(200);
-
+// DBGF("Wifi %s Pass %s", wifi_ssid.c_str(), wifi_pass.c_str());
   // Start an AP and server to configure it
-  if (wifi_ssid == "" || wifi_pass == "") {
+  if (wifi_ssid[0] == '\0' || wifi_pass[0] == '\0') {
     startAP();
     return;
   }
@@ -906,7 +980,7 @@ void setup() {
     bambuIf, isPrinting, previousIsPrinting, openMeteoIf, proxmoxIf, stocksIf, clockIf, fullRefresh);
 
   if (needWiFi) {
-    if (startWiFiReliable(wifi_ssid.c_str(), wifi_pass.c_str())) {
+    if (startWiFiReliable(wifi_ssid, wifi_pass)) {
       DBG("WiFi connected.");
       initTime();
       if (!hasStoredData || stocksIf || trackingIf) {
@@ -1000,7 +1074,9 @@ void setup() {
       if (openMeteoIf) weatherWidget(infoOpenMeteo);
 
       #ifdef BAT_PIN
-      drawStatus(infoBattery);
+      if( infoBattery )
+        drawStatus(infoBattery);
+      DBG("HERE AFTER BATTERY");
       #endif
 
       if (eventIf) gCalWidget(infoEvent);
@@ -1077,6 +1153,6 @@ else
 }
 
 void loop() {
-  if (wifi_ssid == "" || wifi_pass == "")
+  if (wifi_ssid[0] == '\0' || wifi_pass[0] == '\0')
     server.handleClient();
 }

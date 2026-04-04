@@ -102,7 +102,7 @@ void proxmoxWidget(LayoutItem* item)
             &epaperFont,
             item->PosX + item->ColWidth * col,
             item->PosY + item->RowHeight * row + 8,
-            hostsInfo[i].name.c_str(),
+            hostsInfo[i].name,
             (hostsInfo[i].status == 0xF0026 ? GxEPD_BLACK : ALERT_COLOR)
         );
 

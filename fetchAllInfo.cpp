@@ -1,3 +1,4 @@
+#include "app.h"
 #include "configure.h"
 #include "fetchAllInfo.h"
 #include <WiFi.h>
@@ -115,7 +116,8 @@ void fetchData() {
 
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.setTimeout(10000);
+    http.setTimeout(20000);
+    Serial.println( getApiUrl() );
     http.begin( getApiUrl() );
 
     int httpCode = http.GET();
@@ -206,7 +208,9 @@ void fetchData() {
         cal.eventCount = 0;
         for (int i = 0; i < doc["calEvents"]["next24hEvents"].size() && i < 10; i++) {
             JsonObject ev = doc["calEvents"]["next24hEvents"][i].as<JsonObject>();
-            cal.next24hEvents[i].title = ev["title"] | "";
+            copyJsonString(cal.next24hEvents[i].title,
+                           sizeof(cal.next24hEvents[i].title),
+                           ev["title"]);
             cal.next24hEvents[i].start = parseISO8601(ev["start"] | "");
             cal.next24hEvents[i].end = parseISO8601(ev["end"] | "");
             cal.next24hEvents[i].allDay = ev["allDay"] | false;
@@ -323,21 +327,18 @@ time_t parseISO8601(const char* str) {
     return epoch;
 }
 
-String formatTimeRange(time_t start, time_t end)
+void formatTimeRange(time_t start, time_t end, char* buf, size_t bufLen)
 {
+    if (!buf || bufLen == 0) return;
     struct tm ts;
     struct tm te;
 
-    // These functions now respect the global TZ setting
     localtime_r(&start, &ts);
     localtime_r(&end, &te);
 
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%02d:%02d-%02d:%02d",
+    snprintf(buf, bufLen, "%02d:%02d-%02d:%02d",
              ts.tm_hour, ts.tm_min,
              te.tm_hour, te.tm_min);
-
-    return String(buf);
 }
 
 int findLayoutIndexByID(int id) {
@@ -374,10 +375,13 @@ void gCalWidget( LayoutItem* item )
       y += item->RowHeight+5;
     }
 
-    String timeRange = formatTimeRange(cal.next24hEvents[i].start, cal.next24hEvents[i].end);
+    char timeRange[32];
+    formatTimeRange(cal.next24hEvents[i].start, cal.next24hEvents[i].end,
+                    timeRange, sizeof(timeRange));
+    char line[CFG_CAL_TITLE_MAX + 40];
+    snprintf(line, sizeof(line), "%s %s", timeRange, cal.next24hEvents[i].title);
 
-    drawSparseString(&epaperFont,
-                     item->PosX, y, (timeRange + " " + cal.next24hEvents[i].title).c_str(), GxEPD_BLACK);
+    drawSparseString(&epaperFont, item->PosX, y, line, GxEPD_BLACK);
 
     y += item->RowHeight;
   }

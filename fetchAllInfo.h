@@ -48,7 +48,7 @@ struct TrackingItem {
 };
 
 struct CalEventItem {
-  String title;
+  char title[CFG_CAL_TITLE_MAX];
   time_t  start;
   time_t  end;
   bool allDay;
@@ -123,6 +123,7 @@ void debugPrintLayout();
 void saveLayout();
 bool loadLayout();
 time_t parseISO8601(const char*);
+void formatTimeRange(time_t start, time_t end, char* buf, size_t bufLen);
 LayoutItem* getLayout(uint16_t);
 
 // ------------------ Weather helpers ------------------
