@@ -15,13 +15,13 @@ This project is fully functional and includes several demo widgets to showcase i
 ### 📊 Built-in Widgets
 
 - 🖨️ **BambuLab printer monitor**
-- 📊 ** Makerworld statistics **
+- 📊 **Makerworld statistics**
 - 🖥️ **Proxmox server monitor**
 - 🕒 **Time & date display**
 - 🌦️ **Weather forecast**
 - 📅 **Google Calendar events**
 - 📈 **Stock tracking**
-- ⛟  **Parsel tracking**
+- ⛟ **Parcel tracking**
 - 📡 **ZigBee** (Testing)
 
 ### ⚙️ System Features
@@ -42,7 +42,7 @@ This project is fully functional and includes several demo widgets to showcase i
 - ESP32 microcontrolleri  (I used Lolin D32 in the past for the low consumption, now DFRobot FireBeetle 2 ESP32 C6 for option zigbee))
 - 7.5" ePaper display *(GxEPD2-compatible)*  
 - Battery *(optional)*  
-- Ikea switch (Zigbee, Used to turn on the air filter system automatically)
+- Ikea switch (Zigbee, Used to turn on the air filter system automatically) *(optional)*
 
 > ⚠️ **Important Notes**
 > - Most **color ePaper displays do NOT support partial refresh**
@@ -58,8 +58,10 @@ In the configure.h configure the PIN used to control the display, you will find 
 
 For the 2 files that I precompiled the ESP32 and ESP32-C6 and for the BW 7.5 display, you can find them in https://github.com/VoIPshare/ESP32-eInk-Dashboard/releases, pick the file that is marked a merge, and use this site https://www.espboards.dev/tools/program/ with chrome or edge, remember to set the address to 0x0000  
 
-ESP32C6 -  EPD_CS    1, EPD_DC    8, EPD_RST   14, EPD_BUSY  7, EPD_SCK   23, EPD_MOSI  22, PIN_DISPLAYPOWER   4, BAT_PIN   0, DEMO_BUTTON GPIO_NUM_2
-ESP32 -    EPD_CS    15, EPD_DC    27, EPD_RST   26, EPD_BUSY  25, EPD_SCK   13, EPD_MOSI  14, PIN_DISPLAYPOWER   4, BAT_PIN   35
+| Board    | EPD_CS | EPD_DC | EPD_RST | EPD_BUSY | EPD_SCK | EPD_MOSI | PIN_DISPLAYPOWER | BAT_PIN | DEMO_BUTTON |
+|----------|--------|--------|---------|----------|---------|----------|------------------|---------|-------------|
+| ESP32C6  | 1      | 8      | 14      | 7        | 23      | 22       | 4                | 0       | 2           |
+| ESP32    | 15     | 27     | 26      | 25       | 13      | 14       | 4                | 35      | —           |
 
 When you boot for the first time after having uploaded the FW, you must connect to the wifi (Dashbboard-Setup) and configure https://192.168.4.1
 Add:
@@ -96,11 +98,11 @@ A Google Apps Script is used to centralize data:
 
 ### Supported Data
 
-- 📦 Parcel tracking ( https://pkge.net/, you need to register to get the freep API trial ) 
+- ⛟ Parcel tracking ( https://pkge.net/, you need to register to get the freep API trial ) 
 - 📅 Calendar events  
 - 📈 Stocks  
 - 🧩 Layout configuration 
-- Proxmox 
+- 🖥️ Proxmox 
 
 ---
 
@@ -122,7 +124,7 @@ You will find a csv for each of the fields with a sample data
 ---
 
 #### 🕒 Clock Widget
-In extra1 field of the clock row in the layout sheet
+In extra1 field of the clock row in the layout sheet, the string is a POSIX time zone definition used to describe how a clock should handle standard time + daylight saving time (DST) automatically.
 EST5EDT,M3.2.0/2:00:00,M11.1.0/2:00:00
 
 ---
