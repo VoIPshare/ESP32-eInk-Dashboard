@@ -144,6 +144,9 @@ After flashing:
 3. open `http://192.168.4.1`
 4. fill in the configuration page
 
+
+![Desk Dashboard Setup](images/WebConfig.png)
+
 The setup page can store:
 
 - Wi-Fi SSID and password
