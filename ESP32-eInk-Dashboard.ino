@@ -500,10 +500,10 @@ void drawStatus(LayoutItem* item) {
   drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 18, item->PosY + 16, charCode, GxEPD_BLACK);
 #endif
 #if USE_ZIGBEE
-  if (s_light_state)
-    drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 36, item->PosY + 16, 0xF032C, GxEPD_BLACK);
-  else
-    drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 36, item->PosY + 16, 0xF032E, GxEPD_BLACK);
+  if (s_light_state) {
+    drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 36, item->PosY + 16,
+                   MDI_ZIGBEE, GxEPD_BLACK);
+  }
 #endif
 }
 

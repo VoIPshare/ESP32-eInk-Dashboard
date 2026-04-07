@@ -81,3 +81,5 @@ inline constexpr uint32_t MDI_LAYERS       = 0x000F0328;
 inline constexpr uint32_t MDI_BED          = 0x000F0697;
 inline constexpr uint32_t MDI_NOZZLE       = 0x000F0E5B;
 inline constexpr uint32_t MDI_SPOOL        = 0x000F1294;
+inline constexpr uint32_t MDI_ZIGBEE        = 0x000F0D41;
+
