@@ -1,216 +1,297 @@
-# 🖥️ ESP32 E-Paper Desk Dashboard
+# ESP32 ePaper Desk Dashboard
 
 ![Desk Dashboard Setup](images/3ddeskprint.png)
 
-A sleek and customizable **desk dashboard** powered by an **ESP32** and a **7.5" ePaper display**.  
-This project is fully functional and includes several demo widgets to showcase its capabilities.
+A customizable desk dashboard for ESP32 boards and 7.5" ePaper displays. It combines local status widgets, cloud-fetched data, and optional Zigbee automation in a single low-power display.
 
-🚀 **Contributions are welcome!** Add new widgets, improve existing ones, or fork the project.
+## Overview
 
+This project is designed for a desk or workshop display that can show:
 
----
+- time and date
+- Google Calendar events
+- weather forecast
+- stock prices
+- parcel tracking
+- Proxmox server status
+- Bambu Lab printer status
+- MakerWorld statistics
+- optional Zigbee automation
 
-## ✨ Features
+It supports configurable widget layout, cached data for offline rendering, and partial refresh on supported black-and-white ePaper panels.
 
-### 📊 Built-in Widgets
+## Highlights
 
-- 🖨️ **BambuLab printer monitor**
-- 📊 ** Makerworld statistics **
-- 🖥️ **Proxmox server monitor**
-- 🕒 **Time & date display**
-- 🌦️ **Weather forecast**
-- 📅 **Google Calendar events**
-- 📈 **Stock tracking**
-- ⛟  **Parsel tracking**
-- 📡 **ZigBee** (Testing)
+- Multi-widget ePaper dashboard
+- Remote configuration page on first boot
+- Cached layout and widget data in Preferences
+- Configurable widget refresh intervals
+- Optional ESP32-C6 Zigbee support
+- Support for prebuilt firmware and local compilation
 
-### ⚙️ System Features
+## Hardware
 
-- 🔄 **Partial refresh support**  
-  Minimizes full-screen redraws for smoother updates (With BW epaper)
+Minimum setup:
 
-- ⏱️ **Configurable refresh intervals**  
-  Each widget can update independently  
-  > ⚠️ Higher refresh frequency may increase battery usage
+- ESP32 board
+- 7.5" GxEPD2-compatible ePaper display
+- Wi-Fi network
 
-- Configure the widget size and position remotelly
+Optional:
 
----
+- battery-powered setup
+- Bambu Lab printer via MQTT
+- Zigbee switch for automation
 
-## 🧰 Hardware Requirements
+Boards used during development:
 
-- ESP32 microcontrolleri  (I used Lolin D32 in the past for the low consumption, now DFRobot FireBeetle 2 ESP32 C6 for option zigbee))
-- 7.5" ePaper display *(GxEPD2-compatible)*  
-- Battery *(optional)*  
-- Ikea switch (Zigbee, Used to turn on the air filter system automatically)
+- ESP32: Lolin D32
+- ESP32-C6: DFRobot FireBeetle 2 ESP32-C6
 
-> ⚠️ **Important Notes**
-> - Most **color ePaper displays do NOT support partial refresh**
-> - Some displays may require **20+ seconds for full refresh**
+Important notes:
 
----
+- most color ePaper displays do not support partial refresh
+- some large panels can take 20+ seconds for a full refresh
 
-## ⚙️ Setup Guide
+## Pin Reference
 
-### 1. Configure the PIN OUT 
+ESP32-C6:
 
-In the configure.h configure the PIN used to control the display, you will find my preference. If you are using a different display that what I used check the GxEPD2 library and configure it in the INO file.
+- `EPD_CS=1`
+- `EPD_DC=8`
+- `EPD_RST=14`
+- `EPD_BUSY=7`
+- `EPD_SCK=23`
+- `EPD_MOSI=22`
+- `PIN_DISPLAYPOWER=4`
+- `BAT_PIN=0`
+- `DEMO_BUTTON=GPIO_NUM_2`
 
-### Zigbee build notes
+ESP32:
 
-You no longer need to rename any Zigbee source files. To enable Zigbee:
+- `EPD_CS=15`
+- `EPD_DC=27`
+- `EPD_RST=26`
+- `EPD_BUSY=25`
+- `EPD_SCK=13`
+- `EPD_MOSI=14`
+- `PIN_DISPLAYPOWER=4`
+- `BAT_PIN=35`
 
-1. Set `USE_ZIGBEE` to `1` in [`configure.h`](./configure.h)
-2. Build for an **ESP32-C6**
-3. When using `arduino-cli`, pass the Zigbee board options explicitly
+Adjust the board and display configuration in [configure.h](/Users/nasoni/ESP32-eInk-Dashboard/configure.h) and [ESP32-eInk-Dashboard.ino](/Users/nasoni/ESP32-eInk-Dashboard/ESP32-eInk-Dashboard.ino) if your hardware differs.
 
-Example:
+## Build Options
 
-```bash
-arduino-cli compile \
-  --fqbn esp32:esp32:esp32c6:PartitionScheme=zigbee_zczr,ZigbeeMode=zczr \
-  /path/to/ESP32-eInk-Dashboard
-```
+### Arduino IDE
 
-Or with the included sketch profile from the project root:
+Open [ESP32-eInk-Dashboard.ino](/Users/nasoni/ESP32-eInk-Dashboard/ESP32-eInk-Dashboard.ino), select the correct ESP32 board, then compile and upload as usual.
 
-```bash
-arduino-cli compile --profile esp32c6_zigbee /Users/nasoni/ESP32-eInk-Dashboard
-```
+For Zigbee on ESP32-C6:
 
-Normal non-Zigbee ESP32 build:
+- set `USE_ZIGBEE` to `1` in [configure.h](/Users/nasoni/ESP32-eInk-Dashboard/configure.h)
+- use an ESP32-C6 board
+- select a Zigbee-capable partition scheme and Zigbee mode in the board menu
+
+### arduino-cli
+
+The repo includes [sketch.yaml](/Users/nasoni/ESP32-eInk-Dashboard/sketch.yaml) profiles.
+
+Standard ESP32 build:
 
 ```bash
 arduino-cli compile --profile esp32_default /Users/nasoni/ESP32-eInk-Dashboard
 ```
 
-Why Arduino IDE can compile while `arduino-cli` fails:
+ESP32-C6 Zigbee build:
 
-- Arduino IDE keeps the selected board menu options in the GUI
-- `arduino-cli` defaults to Zigbee disabled unless you include `PartitionScheme=zigbee...` and `ZigbeeMode=zczr`
-- If `USE_ZIGBEE=1` but those options are missing, the build now stops with a clear error message
+```bash
+arduino-cli compile --profile esp32c6_zigbee /Users/nasoni/ESP32-eInk-Dashboard
+```
 
-For the 2 files that I precompiled the ESP32 and ESP32-C6 and for the BW 7.5 display, you can find them in https://github.com/VoIPshare/ESP32-eInk-Dashboard/releases, pick the file that is marked a merge, and use this site https://www.espboards.dev/tools/program/ with chrome or edge, remember to set the address to 0x0000  
+If you prefer a direct command, this Zigbee build works:
 
-ESP32C6 -  EPD_CS    1, EPD_DC    8, EPD_RST   14, EPD_BUSY  7, EPD_SCK   23, EPD_MOSI  22, PIN_DISPLAYPOWER   4, BAT_PIN   0, DEMO_BUTTON GPIO_NUM_2
-ESP32 -    EPD_CS    15, EPD_DC    27, EPD_RST   26, EPD_BUSY  25, EPD_SCK   13, EPD_MOSI  14, PIN_DISPLAYPOWER   4, BAT_PIN   35
+```bash
+arduino-cli compile \
+  --fqbn esp32:esp32:esp32c6:PartitionScheme=custom,ZigbeeMode=zczr \
+  /Users/nasoni/ESP32-eInk-Dashboard \
+  -e
+```
 
-When you boot for the first time after having uploaded the FW, you must connect to the wifi (Dashbboard-Setup) and configure https://192.168.4.1
-Add:
-- Wi-Fi credentials
-- Google script ID
-- MQTT Information (Pass, Serial Number, IP and port)
+Why Arduino IDE and `arduino-cli` can behave differently:
 
-These values are saved on the device.
+- Arduino IDE remembers board-menu selections in the GUI
+- `arduino-cli` needs those board options passed explicitly
+- Zigbee on ESP32-C6 requires both the correct partition scheme and Zigbee mode
 
-This configuration will be reset everytime you upload a new image, if you choose so.
+## Prebuilt Firmware
 
----
+Prebuilt merged binaries are available in the project releases:
 
-### 2. 🔤 Fonts
+- [ESP32-eInk-Dashboard releases](https://github.com/VoIPshare/ESP32-eInk-Dashboard/releases)
 
-All font-related setup has been moved to a dedicated documentation file:
+To flash them from a browser, you can use:
 
-👉 [`fonts/README.md`](fonts/README.md)
+- [espboards.dev firmware programmer](https://www.espboards.dev/tools/program/)
 
-Inside you'll find:
-- Conversion scripts (`ListFontConvertV4.py`)
-- Glyph sets for each font
-- Icon font configuration (MDI)
-- Optimization tips for ePaper rendering
+Use address `0x0000` when flashing the merged image.
 
-> ⚠️ Glyph order **must remain consistent** or rendering issues may occur.
+## First Boot and Device Setup
 
----
+After flashing:
 
-## ☁️ Google Script 
-Create a google script for retrive part of the informaiton
+1. power on the device
+2. connect to the setup Wi-Fi network: `Dashbboard-Setup`
+3. open `http://192.168.4.1`
+4. fill in the configuration page
 
-A Google Apps Script is used to centralize data:
+The setup page can store:
 
-### Supported Data
+- Wi-Fi SSID and password
+- Google Script ID
+- MQTT IP, port, username, and password
+- optional Zigbee-related settings when Zigbee firmware is enabled
 
-- 📦 Parcel tracking ( https://pkge.net/, you need to register to get the freep API trial ) 
-- 📅 Calendar events  
-- 📈 Stocks  
-- 🧩 Layout configuration 
-- Proxmox 
+These settings are stored on the device. Depending on upload and erase settings, they may be reset after flashing new firmware.
 
----
+## Zigbee Notes
 
-### 🛠️ Deployment Steps
+Zigbee support is intended for ESP32-C6 builds.
 
-1. Create a new Apps Script project  
-2. Add your script  
-3. Click **Deploy → New Deployment → Web App** and note the published URL. It looks like  
-   `https://script.google.com/macros/s/<SCRIPT_ID>/exec` — the `<SCRIPT_ID>` segment is what the firmware expects.
+Current behavior:
 
-**On the device (no recompile):** After flashing, connect to the setup Wi‑Fi and open the configuration page (see **Setup Guide** above). Enter that **Google Script ID** together with your Wi‑Fi and MQTT settings. You can change it later from the same portal without rebuilding firmware.
+- Zigbee control follows the Bambu aux fan state
+- when the aux fan turns on, the Zigbee switch is turned on
+- when the aux fan turns off, the Zigbee switch is turned off
 
----
+Because printer status is refreshed periodically, the Zigbee off action can happen about 1 to 5 minutes after the fan stops.
 
-### 📊 Required Google Spreadsheet
+## Google Apps Script
 
-Create a spreadsheet with **3 sheets**: 📈 Stocks, 📦 Tracking 🧩 Layout
-You will find a csv for each of the fields with a sample data
----
+The firmware expects a Google Apps Script web app that acts as a central data source.
 
-#### 🕒 Clock Widget
-In extra1 field of the clock row in the layout sheet
+Supported data:
+
+- parcel tracking
+- calendar events
+- stocks
+- layout configuration
+- Proxmox data
+- weather
+- MakerWorld data
+
+### Deployment
+
+1. create a new Google Apps Script project
+2. add your script
+3. deploy it as a Web App
+4. copy the published URL
+
+The published URL looks like:
+
+```text
+https://script.google.com/macros/s/<SCRIPT_ID>/exec
+```
+
+The firmware only needs the `<SCRIPT_ID>` portion. You enter that value on the device setup page, not in the source code.
+
+### Required Spreadsheet Sheets
+
+Create a spreadsheet with these sheets:
+
+- `Stocks`
+- `Tracking`
+- `Layout`
+
+Sample CSV files are included in [googleScripts](/Users/nasoni/ESP32-eInk-Dashboard/googleScripts).
+
+### Layout Tips
+
+Clock widget:
+
+- put the timezone string in the `Extra1` field of the clock row
+- example:
+
+```text
 EST5EDT,M3.2.0/2:00:00,M11.1.0/2:00:00
+```
 
----
+Weather widget:
 
-#### 🌦️ Weather (Open-Meteo)
+- `Extra1`: latitude
+- `Extra2`: longitude
 
-- Extra1: Latitude (e.g. 40.712)  
-- Extra2: Longitude (e.g. -74.006)  
+Example:
 
----
+- `Extra1 = 40.712`
+- `Extra2 = -74.006`
 
-## 🧱 3D-Printed Case
+## Fonts
 
-Download the custom enclosure:
+Font tooling and conversion notes are documented in [fonts/README.md](/Users/nasoni/ESP32-eInk-Dashboard/fonts/README.md).
 
-👉 https://makerworld.com/en/models/2443888-epaper-dashboard-7-5-with-esp32-desktop-version
+That folder includes:
 
----
+- conversion scripts
+- glyph lists
+- Material Design icon setup
+- ePaper font optimization notes
 
-## 🪪 Fonts & Licenses
+Important:
 
-### Material Design Icons
-- Source: https://materialdesignicons.com/  
-- License: Apache 2.0  
+- glyph order must remain consistent
 
-### Montserrat
-- Source: https://fonts.google.com/specimen/Montserrat  
-- License: SIL Open Font License 1.1  
+## 3D-Printed Case
 
-### HighSpeed
-- Source: https://www.dafont.com/high-speed.font  
-- License: Free for personal use *(commercial requires permission)*  
+The case model is available here:
 
----
+- [MakerWorld enclosure model](https://makerworld.com/en/models/2443888-epaper-dashboard-7-5-with-esp32-desktop-version)
 
-## 🤝 Contributing
+## CI Builds
 
-Contributions are welcome!
+GitHub Actions can build firmware for:
 
-- Add new widgets  
-- Improve performance  
-- Enhance UI/UX  
-- Fix bugs  
+- ESP32
+- ESP32-C6
+- ESP32-C6 with Zigbee
 
-👉 Fork the repo and submit a PR
+The workflow uses the repo [partitions.csv](/Users/nasoni/ESP32-eInk-Dashboard/partitions.csv) and can inject a firmware version string that is shown on the device near the battery indicator.
 
----
+## Project Structure
 
-## ⭐ Final Notes
+Key files:
 
-- Glyph order is **critical** for font rendering  
-- Optimize refresh intervals for battery usage  
-- Prefer partial refresh where supported  
+- [ESP32-eInk-Dashboard.ino](/Users/nasoni/ESP32-eInk-Dashboard/ESP32-eInk-Dashboard.ino): main sketch, display update flow, setup portal
+- [configure.h](/Users/nasoni/ESP32-eInk-Dashboard/configure.h): board options, feature flags, icon constants
+- [fetchAllInfo.cpp](/Users/nasoni/ESP32-eInk-Dashboard/fetchAllInfo.cpp): JSON parsing and widget rendering
+- [bambulab.cpp](/Users/nasoni/ESP32-eInk-Dashboard/bambulab.cpp): printer status and MQTT fetch
+- [dash_zigbee.cpp](/Users/nasoni/ESP32-eInk-Dashboard/dash_zigbee.cpp): Zigbee integration
+- [googleScripts](/Users/nasoni/ESP32-eInk-Dashboard/googleScripts): Apps Script samples and CSV examples
 
----
+## Licenses and Attribution
 
-Enjoy building your **ESP32 E-Paper Dashboard**! 🚀
+Material Design Icons:
+
+- source: [materialdesignicons.com](https://materialdesignicons.com/)
+- license: Apache 2.0
+
+Montserrat:
+
+- source: [Google Fonts](https://fonts.google.com/specimen/Montserrat)
+- license: SIL Open Font License 1.1
+
+HighSpeed:
+
+- source: [dafont.com/high-speed.font](https://www.dafont.com/high-speed.font)
+- license: free for personal use, commercial use requires permission
+
+## Contributing
+
+Contributions are welcome. Good areas for improvement include:
+
+- new widgets
+- layout and UI polish
+- performance tuning
+- network and parsing robustness
+- documentation
+
+Open an issue or submit a pull request if you want to contribute.
