@@ -92,12 +92,13 @@ jobs:
       # ------------------------------
       - name: Compile sketch
         run: |
+          VERSION="${{ github.event.inputs.version }}"
           arduino-cli compile \
             --fqbn ${{ matrix.fqbn }} \
             --board-options ${{ matrix.board-options }} \
             --build-property "build.custom_partitions=$GITHUB_WORKSPACE/partitions.csv" \
             --build-property "upload.maximum_size=3604480" \
-            --build-property "compiler.cpp.extra_flags=-DUSE_COLORDISPLAY=0" \
+            --build-property "compiler.cpp.extra_flags=-DUSE_COLORDISPLAY=0 -DFW_VERSION=\"$VERSION\"" \
             --export-binaries \
             --output-dir ${{ matrix.build-dir }} \
             ./ESP32-eInk-Dashboard.ino

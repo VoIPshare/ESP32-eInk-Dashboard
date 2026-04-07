@@ -16,6 +16,7 @@ void closeZigbee();
 
 void activateCoordinator();
 void readZigbee();
+bool syncZigbeePower(bool turnOn);
 
 void triggerZigbeeSwitch();
 
@@ -28,6 +29,7 @@ inline void activateCoordinatorReadAndClose(bool) {}
 inline void closeZigbee() {}
 inline void activateCoordinator() {}
 inline void readZigbee() {}
+inline bool syncZigbeePower(bool) { return false; }
 inline void triggerZigbeeSwitch() {}
 inline bool switchOn() { return false; }
 inline bool switchOff() { return false; }

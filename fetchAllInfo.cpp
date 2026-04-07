@@ -22,6 +22,17 @@ int trackingCount = 0;
 // int calEventCount=0;
 Preferences prefs;
 
+static void drawUnavailableMessage(LayoutItem* item) {
+    if (!item) return;
+
+    int centerX = item->PosX + item->Width / 2;
+    int centerY = item->PosY + item->Height / 2;
+
+    drawSparseStringCentered(&epaperFont, centerX, centerY - 8,
+                             "Not available", GxEPD_BLACK);
+    drawSparseStringCentered(&epaperFont, centerX, centerY + 10,
+                             "at the moment", GxEPD_BLACK);
+}
 
 void saveLayout() {
     prefs.begin("ePaper", false);
@@ -111,6 +122,7 @@ bool loadLayout() {
 // Layout is cached in Preferences so we can render something even when Wi-Fi fails.
 void fetchData() {
     stockCount = layoutCount = trackingCount = cal.eventCount = weather.count = 0;
+    makerworld = {0, 0, 0, 0, 0, 0, false};
 
     if (WiFi.status() != WL_CONNECTED) return;
 
@@ -256,6 +268,7 @@ void fetchData() {
         makerworld.prints      = mw["total"]["prints"]      | 0;
         makerworld.collections = mw["total"]["collections"] | 0;
         makerworld.boosts      = mw["total"]["boosts"]      | 0;
+        makerworld.available   = true;
         // Optional: parse lastUpdated
         const char* ts = mw["lastUpdated"] | "";
         makerworld.lastUpdated = parseISO8601(ts);
@@ -390,6 +403,12 @@ void gCalWidget( LayoutItem* item )
 // --- Draw stocks on e-ink using Material icons + text ---
 void stockWidget( LayoutItem* item ) 
 {
+  if (!item) return;
+  if (stockCount <= 0) {
+    drawUnavailableMessage(item);
+    return;
+  }
+
   int y = item->PosY + item->RowHeight; // starting Y position
 
     for (size_t i = 0; i < stockCount; i++) {
@@ -461,6 +480,10 @@ LayoutItem* getLayout(uint16_t id) {
 // ------------------ Weather widget ------------------
 void weatherWidget(LayoutItem* item) {
     if (!item) return;
+    if (weather.count <= 0) {
+        drawUnavailableMessage(item);
+        return;
+    }
 
     int x = item->PosX;
     int y = item->PosY+63;
@@ -504,6 +527,11 @@ uint32_t weatherCodeToMDI(int code) {
 void makerWorldWidget(LayoutItem* item) {
     if (!item) return;
     loadMakerWorld(); 
+    if (!makerworld.available) {
+        drawUnavailableMessage(item);
+        return;
+    }
+
     int x = item->PosX;
     int y = item->PosY + 19;
 
@@ -545,6 +573,7 @@ void saveMakerWorld() {
     prefs.putInt("mw_prints",      makerworld.prints);
     prefs.putInt("mw_collections", makerworld.collections);
     prefs.putInt("mw_boosts",      makerworld.boosts);
+    prefs.putBool("mw_available",  makerworld.available);
 
     prefs.end();
 
@@ -559,6 +588,7 @@ void loadMakerWorld() {
     makerworld.prints      = prefs.getInt("mw_prints", 0);
     makerworld.collections = prefs.getInt("mw_collections", 0);
     makerworld.boosts      = prefs.getInt("mw_boosts", 0);
+    makerworld.available   = prefs.getBool("mw_available", false);
 
     prefs.end();
 

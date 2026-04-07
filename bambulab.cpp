@@ -290,3 +290,7 @@ void fetchBambu(  LayoutItem* infoBambu  )
   client.disconnect();   // <-- CLOSE MQTT connection
   wifiClient.stop();
 }
+
+bool isAuxFanOn() {
+  return printer.big_fan1_speed > 0;
+}

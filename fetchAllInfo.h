@@ -85,6 +85,7 @@ struct MakerWorld {
     int collections;
     int boosts;
     time_t lastUpdated;   // optional: store last update timestamp
+    bool available;
 };
 
 extern MakerWorld makerworld;

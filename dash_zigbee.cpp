@@ -22,7 +22,7 @@ static void printBoundDevicesInfo() {
   zbSwitch.getLightState();
 }
 
-void activateCoordinatorReadAndClose(bool flipSwitch) {
+static bool beginCoordinatorSession() {
   s_light_state = false;
   Serial.println("\n[ZB] Activating Zigbee coordinator");
 
@@ -44,6 +44,19 @@ void activateCoordinatorReadAndClose(bool flipSwitch) {
   }
 
   vTaskDelay(300 / portTICK_PERIOD_MS);
+  return true;
+}
+
+static void endCoordinatorSession() {
+  printBoundDevicesInfo();
+  vTaskDelay(3000 / portTICK_PERIOD_MS);
+  Zigbee.setRebootOpenNetwork(0);
+  vTaskDelay(100 / portTICK_PERIOD_MS);
+  Zigbee.closeNetwork();
+}
+
+void activateCoordinatorReadAndClose(bool flipSwitch) {
+  beginCoordinatorSession();
 
   if (flipSwitch) {
     Serial.println("[ZB] Toggle switch");
@@ -55,12 +68,7 @@ void activateCoordinatorReadAndClose(bool flipSwitch) {
   zbSwitch.getLightState();
   vTaskDelay(300 / portTICK_PERIOD_MS);
 
-  printBoundDevicesInfo();
-
-  vTaskDelay(3000 / portTICK_PERIOD_MS);
-  Zigbee.setRebootOpenNetwork(0);
-  vTaskDelay(100 / portTICK_PERIOD_MS);
-  Zigbee.closeNetwork();
+  endCoordinatorSession();
 }
 
 void closeZigbee() {
@@ -84,6 +92,23 @@ void readZigbee() {
   delay(200);
   zbSwitch.lightToggle();
   delay(200);
+}
+
+bool syncZigbeePower(bool turnOn) {
+  beginCoordinatorSession();
+
+  Serial.printf("[ZB] Setting switch %s\n", turnOn ? "ON" : "OFF");
+  bool ok = turnOn ? switchOn() : switchOff();
+  vTaskDelay(500 / portTICK_PERIOD_MS);
+
+  if (ok) {
+    s_light_state = turnOn;
+    zbSwitch.getLightState();
+    vTaskDelay(300 / portTICK_PERIOD_MS);
+  }
+
+  endCoordinatorSession();
+  return ok;
 }
 
 bool switchOn() {

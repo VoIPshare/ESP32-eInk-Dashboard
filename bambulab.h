@@ -58,3 +58,4 @@ extern RTC_DATA_ATTR bool previousIsPrinting;
 
 void fetchBambu(  LayoutItem*  );
 void bambuWidget(LayoutItem* );
+bool isAuxFanOn();

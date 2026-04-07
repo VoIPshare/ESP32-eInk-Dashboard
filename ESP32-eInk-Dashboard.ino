@@ -47,6 +47,7 @@ uint8_t zigbee_monitor_ep = 1;
 
 char zigbee_control[CFG_ZIGBEE_STR_MAX];
 uint8_t zigbee_control_ep = 1;
+RTC_DATA_ATTR int8_t zigbee_aux_last_command = -1;
 #endif
 
 unsigned long previousMillis = 0;
@@ -150,6 +151,16 @@ button:hover{
   font-size:12px;
   color:#777;
 }
+
+.note{
+  margin:14px 0;
+  padding:10px 12px;
+  border-radius:10px;
+  background:#eef6ff;
+  color:#335;
+  font-size:13px;
+  line-height:1.4;
+}
 </style>
 
 <script>
@@ -201,7 +212,18 @@ html += R"rawliteral(
 
     <label>MQTT Password</label>
     <input name="mqtt_pass" placeholder="Password">
+)rawliteral";
 
+#if USE_ZIGBEE
+  html += R"rawliteral(
+    <div class="note">
+      Zigbee automation follows the Bambu aux fan: switch ON when the aux fan is ON, switch OFF when the aux fan is OFF.
+      Because the printer data is refreshed periodically, the OFF action can happen about 1 to 5 minutes after the fan stops.
+    </div>
+)rawliteral";
+#endif
+
+html += R"rawliteral(
     <button type="submit">Save Configuration</button>
 
   </form>
@@ -431,10 +453,25 @@ void drawStatus(LayoutItem* item) {
 
   char buf[20];
   snprintf(buf, sizeof(buf), "%.2f V", voltage);
+
+  char versionBuf[32];
+  snprintf(versionBuf, sizeof(versionBuf), "v%s", FW_VERSION);
   
   display.fillRect(item->PosX, item->PosY, item->Width, item->Height, GxEPD_WHITE);
 
   drawSparseString(&epaperFont, item->PosX, item->PosY + 16, buf, GxEPD_BLACK);
+
+  int16_t versionWidth = getSparseStringWidth(&epaperFont, versionBuf);
+  int16_t iconReserve = 24;
+#if USE_ZIGBEE
+  iconReserve += 20;
+#endif
+  int16_t versionX = item->PosX + item->Width - iconReserve - versionWidth;
+  int16_t minVersionX = item->PosX + getSparseStringWidth(&epaperFont, buf) + 8;
+  if (versionX < minVersionX) {
+    versionX = minVersionX;
+  }
+  drawSparseString(&epaperFont, versionX, item->PosY + 16, versionBuf, GxEPD_BLACK);
 
   float percentage = constrain((voltage - BAT_MIN_V) / (BAT_MAX_V - BAT_MIN_V) * 100.0f, 0, 100);
 
@@ -1013,6 +1050,21 @@ void setup() {
       if (bambuIf) 
         fetchBambu(infoBambu);
 
+#if USE_ZIGBEE
+      if (zigbee_enable && bambuIf) {
+        bool auxFanOn = isAuxFanOn();
+        int8_t desiredCommand = auxFanOn ? 1 : 0;
+
+        if (zigbee_aux_last_command != desiredCommand) {
+          DBGF("[ZB] Aux fan changed -> Zigbee %s", auxFanOn ? "ON" : "OFF");
+          if (syncZigbeePower(auxFanOn)) {
+            zigbee_aux_last_command = desiredCommand;
+            forceUpdateStatusBar = true;
+          }
+        }
+      }
+#endif
+
       if (proxmoxIf) 
         fetchProxmoxStates(infoProxMox, 3);
 
@@ -1023,12 +1075,6 @@ void setup() {
     delay(200);
     WiFi.mode(WIFI_OFF);
   }
-
-#if USE_ZIGBEE
-  // This is to test, will be moved in the bambulab
-  activateCoordinatorReadAndClose(true);
-  forceUpdateStatusBar = true;
-#endif
 
   DBGF("Boot Count %d", bootCount);
 

@@ -6,6 +6,10 @@
 #define DEBUG               1   // set to 1 to enable debug prints
 #endif
 
+#ifndef FW_VERSION
+#define FW_VERSION          "dev"
+#endif
+
 // Set to 1 to compile the optional Zigbee controller support.
 // For arduino-cli on ESP32-C6, this also requires Zigbee-specific board options:
 //   --fqbn esp32:esp32:esp32c6:PartitionScheme=zigbee_zczr,ZigbeeMode=zczr
