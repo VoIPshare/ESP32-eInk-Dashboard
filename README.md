@@ -56,6 +56,40 @@ This project is fully functional and includes several demo widgets to showcase i
 
 In the configure.h configure the PIN used to control the display, you will find my preference. If you are using a different display that what I used check the GxEPD2 library and configure it in the INO file.
 
+### Zigbee build notes
+
+You no longer need to rename any Zigbee source files. To enable Zigbee:
+
+1. Set `USE_ZIGBEE` to `1` in [`configure.h`](./configure.h)
+2. Build for an **ESP32-C6**
+3. When using `arduino-cli`, pass the Zigbee board options explicitly
+
+Example:
+
+```bash
+arduino-cli compile \
+  --fqbn esp32:esp32:esp32c6:PartitionScheme=zigbee_zczr,ZigbeeMode=zczr \
+  /path/to/ESP32-eInk-Dashboard
+```
+
+Or with the included sketch profile from the project root:
+
+```bash
+arduino-cli compile --profile esp32c6_zigbee /Users/nasoni/ESP32-eInk-Dashboard
+```
+
+Normal non-Zigbee ESP32 build:
+
+```bash
+arduino-cli compile --profile esp32_default /Users/nasoni/ESP32-eInk-Dashboard
+```
+
+Why Arduino IDE can compile while `arduino-cli` fails:
+
+- Arduino IDE keeps the selected board menu options in the GUI
+- `arduino-cli` defaults to Zigbee disabled unless you include `PartitionScheme=zigbee...` and `ZigbeeMode=zczr`
+- If `USE_ZIGBEE=1` but those options are missing, the build now stops with a clear error message
+
 For the 2 files that I precompiled the ESP32 and ESP32-C6 and for the BW 7.5 display, you can find them in https://github.com/VoIPshare/ESP32-eInk-Dashboard/releases, pick the file that is marked a merge, and use this site https://www.espboards.dev/tools/program/ with chrome or edge, remember to set the address to 0x0000  
 
 ESP32C6 -  EPD_CS    1, EPD_DC    8, EPD_RST   14, EPD_BUSY  7, EPD_SCK   23, EPD_MOSI  22, PIN_DISPLAYPOWER   4, BAT_PIN   0, DEMO_BUTTON GPIO_NUM_2

@@ -16,13 +16,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - board: esp32:esp32:dfrobot_beetle_esp32c6
-            name: ESP32C6
-            build-dir: build_c6
+          - name: ESP32
+            fqbn: esp32:esp32:esp32
+            board-options: PartitionScheme=custom
+            build-dir: build_esp32
 
-          - board: esp32:esp32:d32
-            name: ESP32D32
-            build-dir: build_d2
+          - name: ESP32C6
+            fqbn: esp32:esp32:esp32c6
+            board-options: PartitionScheme=custom
+            build-dir: build_esp32c6
+
+          - name: ESP32C6-Zigbee
+            fqbn: esp32:esp32:esp32c6
+            board-options: PartitionScheme=custom,ZigbeeMode=zczr
+            build-dir: build_esp32c6_zigbee
 
     steps:
       - uses: actions/checkout@v4
@@ -81,20 +88,13 @@ jobs:
           sed -i 's/SPI_BITORDER_LSBFIRST = SPI_LSBFIRST/SPI_BITORDER_LSBFIRST = LSBFIRST/' "$FILE"
 
       # ------------------------------
-      # Custom partition table
-      # ------------------------------
-      - name: Install custom partition table
-        run: |
-          PART_DIR=$(find ~/.arduino15/packages/esp32/hardware/esp32 -type d -name partitions | head -n 1)
-          cp $GITHUB_WORKSPACE/partitions.csv "$PART_DIR/partitions.csv"
-
-      # ------------------------------
       # Compile
       # ------------------------------
       - name: Compile sketch
         run: |
           arduino-cli compile \
-            --fqbn ${{ matrix.board }} \
+            --fqbn ${{ matrix.fqbn }} \
+            --board-options ${{ matrix.board-options }} \
             --build-property "build.custom_partitions=$GITHUB_WORKSPACE/partitions.csv" \
             --build-property "upload.maximum_size=3604480" \
             --build-property "compiler.cpp.extra_flags=-DUSE_COLORDISPLAY=0" \
@@ -107,7 +107,7 @@ jobs:
       # ------------------------------
       - name: Rename firmware
         run: |
-          mkdir firmware
+          mkdir -p firmware
           cp ${{ matrix.build-dir }}/*.bin firmware/
 
           cd firmware

@@ -116,7 +116,7 @@ void fetchData() {
 
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.setTimeout(20000);
+    http.setTimeout(28000);
     Serial.println( getApiUrl() );
     http.begin( getApiUrl() );
 
