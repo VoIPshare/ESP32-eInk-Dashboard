@@ -7,14 +7,14 @@
 #endif
 
 #ifndef FW_VERSION
-#define FW_VERSION          "dev"
+#define FW_VERSION          ".25"
 #endif
 
 // Set to 1 to compile the optional Zigbee controller support.
 // For arduino-cli on ESP32-C6, this also requires Zigbee-specific board options:
 //   --fqbn esp32:esp32:esp32c6:PartitionScheme=zigbee_zczr,ZigbeeMode=zczr
 #ifndef USE_ZIGBEE
-#define USE_ZIGBEE          1
+#define USE_ZIGBEE          0
 #endif
 
 #if USE_ZIGBEE && !defined(CONFIG_IDF_TARGET_ESP32C6) && !defined(ARDUINO_ESP32C6_DEV)
@@ -72,7 +72,7 @@
 
 
 #define BUTTON_HOLD_MS       2000     // 2 seconds hold enter demo mode
-#define BUTTON_LONG_HOLD_MS  8000     // 8 seconds hold force reconfigure
+#define BUTTON_LONG_HOLD_MS  6000     // 6 seconds hold force reconfigure
 
 inline constexpr uint32_t MDI_FAN_COOLING  = 0x000F1797;
 inline constexpr uint32_t MDI_FAN_EXHAUST  = 0x000F0D43;

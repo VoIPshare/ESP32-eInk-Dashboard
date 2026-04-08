@@ -37,6 +37,7 @@ char googleapi[CFG_GOOGLEAPI_MAX];
 
 bool forceUpdateStatusBar = false;
 bool forceRefreshAfterDemo = false;
+bool apModeActive = false;
 
 #if USE_ZIGBEE
 bool zigbee_enable = false;
@@ -724,6 +725,7 @@ ESP.restart();
 
 
 void startAP() {
+  apModeActive = true;
 
   Serial.println("Start AP");
 
@@ -1282,6 +1284,6 @@ else
 }
 
 void loop() {
-  if (wifi_ssid[0] == '\0' || wifi_pass[0] == '\0')
+  if (apModeActive || wifi_ssid[0] == '\0' || wifi_pass[0] == '\0')
     server.handleClient();
 }
