@@ -145,7 +145,7 @@ After flashing:
 4. fill in the configuration page
 
 
-![Desk Dashboard Setup](images/WebConfig.png){width=50%}
+![Desk Dashboard Setup](images/WebConfig.png)
 
 The setup page can store:
 

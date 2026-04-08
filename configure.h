@@ -13,7 +13,7 @@
 // Set to 1 to compile the optional Zigbee controller support.
 // For arduino-cli on ESP32-C6, this also requires Zigbee-specific board options:
 //   --fqbn esp32:esp32:esp32c6:PartitionScheme=zigbee_zczr,ZigbeeMode=zczr
-#define USE_ZIGBEE          0
+#define USE_ZIGBEE          1
 
 #if USE_ZIGBEE && !defined(CONFIG_IDF_TARGET_ESP32C6)
 #error "USE_ZIGBEE currently supports the ESP32-C6 build in this project."
