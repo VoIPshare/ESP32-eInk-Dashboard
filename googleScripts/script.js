@@ -8,11 +8,10 @@ function truncate(str, max) {
   return str.length > max ? str.substring(0, max - 3) + "..." : str;
 }
 
-const SHEET_NAME = "Tracking";
 const REFRESH_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
 
 const TRACK_URL="https://api.pkge.net/v1/packages";
-var TRACK_API_KEY; 
+var TRACK_API_KEY=getExtra(16,1);
 
 function getSpreadsheet() {
 
@@ -235,12 +234,14 @@ function getAllInfo() {
   const layout = getLayoutData();
   const calEvents = getCalendar();
   const maker = getMakerWorldStats(); // optional
-
   // --- Open-Meteo weather ---
   const latitude = 45.5017;   // Montreal, replace with dynamic if needed
   const longitude = -73.5673;
   const weatherDays = 4;       // number of forecast days
   const weather = fetchOpenMeteo(latitude, longitude, weatherDays, 3);
+
+// Logger.log( weather  );
+
 
   const results = {
     calEvents: calEvents,
@@ -256,6 +257,7 @@ function getAllInfo() {
   return results;
 }
 
+
 /**
  * Flexible GET endpoint:
  * - No query param → return all cached info
@@ -263,8 +265,85 @@ function getAllInfo() {
  * - ?data=stocks → return only stocks, etc.
  */
 function doGet(e) {
-  const results = getAllInfo(); // fetch or get from cache
 
+  if (e && e.parameter && e.parameter.fn )
+  {
+    const cache = CacheService.getScriptCache();
+  // --- Available data sources ---
+    const sources = {
+      calEvents: {
+        fn: getCalendar,
+        ttl: 300 // 5 min
+      },
+      stocks: {
+        fn: getStockInfo,
+        ttl: 300
+      },
+      tracking: {
+        fn: getTrackingInfo,
+        ttl: 300
+      },
+      layout: {
+        fn: getLayoutData,
+        ttl: 3600
+      },
+      makerworld: {
+        fn: getMakerWorldStats,
+        ttl: 600
+      },
+      weather: {
+        fn: () => fetchOpenMeteo(45.5017, -73.5673, 4, 3),
+        ttl: 900
+      }
+    };
+
+    let requestedKeys;
+
+    // --- No param → return ALL (but still optimized with cache) ---
+    if (!e || !e.parameter || !e.parameter.data) {
+      requestedKeys = Object.keys(sources);
+    } else {
+      requestedKeys = e.parameter.data
+        .split(',')
+        .map(k => k.trim())
+        .filter(k => sources[k]);
+    }
+
+    const result = {};
+
+    requestedKeys.forEach(key => {
+      const cacheKey = "cache_" + key;
+
+      // Try cache
+      let cached = cache.get(cacheKey);
+
+      if (cached) {
+        result[key] = JSON.parse(cached);
+        return;
+      }
+
+      // Fetch only if needed
+      try {
+        const data = sources[key].fn();
+        result[key] = data;
+
+        // Store in cache
+        cache.put(cacheKey, JSON.stringify(data), sources[key].ttl);
+
+      } catch (err) {
+        result[key] = { error: err.toString() };
+      }
+    });
+
+    // --- Add timestamp ---
+    result.lastUpdated = new Date().toISOString();
+
+    return ContentService
+      .createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const results = getAllInfo(); // fetch or get from cache
+// Logger.log( results );
   // If no "data" param, return everything
   if (!e || !e.parameter || !e.parameter.data) {
     return ContentService
@@ -323,33 +402,44 @@ function weatherCodeToMDI(code) {
  * @param {number} maxRetries Optional, number of retries if request fails
  * @returns {Array} Array of day objects: {sunrise, sunset, temp_max, temp_min, weather_code, icon}
  */
-function fetchOpenMeteo( maxRetries ) {
-  const latitude=getExtra(8,1);
-  const longitude=getExtra(8,2);
-  // const days=getExtra(8,3);
+function fetchOpenMeteo( ) {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get("weather_last_good");
 
-  days = Math.min(Math.max(getExtra(8,3) || 1, 1), 7); // constrain between 1–7
-  maxRetries = maxRetries || 3;
+  const latitude = Number(getExtra(8, 1));
+  const longitude = Number(getExtra(8, 2));
+  const days = Math.min(Math.max(Number(getExtra(8, 3)) || 1, 1), 7);
+
+  if (!isFinite(latitude) || !isFinite(longitude)) {
+    Logger.log("OpenMeteo skipped: invalid latitude/longitude in Layout row ID 8");
+    return cached ? JSON.parse(cached) : null;
+  }
 
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
               `&daily=weather_code,sunrise,sunset,temperature_2m_max,temperature_2m_min` +
               `&forecast_days=${days}&timezone=auto`;
 
   let payload = null;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = UrlFetchApp.fetch(url, {muteHttpExceptions: true});
+      const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      Logger.log(`OpenMeteo response code: ${response.getResponseCode()} attempt=${attempt + 1}`);
       if (response.getResponseCode() === 200) {
         payload = JSON.parse(response.getContentText());
-        if (payload && payload.daily) break; // success
+        if (payload && payload.daily) break;
       }
     } catch (e) {
       Logger.log(`OpenMeteo attempt ${attempt + 1} failed: ${e}`);
     }
-    Utilities.sleep(500); // wait 500ms before retry
+
+    Utilities.sleep(500 * (attempt + 1));
   }
 
-  if (!payload || !payload.daily) return null;
+  Logger.log(payload);
+  if (!payload || !payload.daily) {
+    return cached ? JSON.parse(cached) : null;
+  }
 
   const daily = payload.daily;
   const result = [];
@@ -361,25 +451,13 @@ function fetchOpenMeteo( maxRetries ) {
       temp_max: daily.temperature_2m_max[i] || 0,
       temp_min: daily.temperature_2m_min[i] || 0,
       weather_code: daily.weather_code[i] || 0,
-      icon: weatherCodeToMDI(daily.weather_code[i] || 0)
+      // icon: weatherCodeToMDI(daily.weather_code[i] || 0)
     });
   }
 
+  cache.put("weather_last_good", JSON.stringify(result), 6 * 60 * 60);
   return result;
 }
-
-/**
- * Example usage
- */
-function testOpenMeteo() {
-  const latitude = 45.5017;  // Montreal
-  const longitude = -73.5673;
-  const days = 4;
-
-  const forecast = fetchOpenMeteo(latitude, longitude, days, 3);
-  Logger.log(forecast);
-}
-
 
 
 /**
@@ -389,11 +467,9 @@ function testOpenMeteo() {
  * @returns {Object} tracking info
  */
 function getTrackingInfo() {
-
-  TRACK_API_KEY = getExtra(16,1);
-
+  refreshTracking();
   const ss = getSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
+  const sheet = ss.getSheetByName("Tracking");
   if (!sheet) throw new Error("Sheet not found");
 
   const now = new Date();
@@ -487,8 +563,9 @@ function formatDate(d) {
  * @param {string} trackingNumber
  * @returns {Object} lastStatus, deliveryStatus
  */
-function update(trackingNumber) {
+function updateTracking(trackingNumber) {
   const url = `${TRACK_URL}/update?trackNumber=${encodeURIComponent(trackingNumber)}`;
+  Logger.log( url );
   // Logger.log( url );
   const options = {
     method: "post",
@@ -497,10 +574,11 @@ function update(trackingNumber) {
     },
     muteHttpExceptions: true
   };
-  
+  Logger.log( options );
 
   try {
     const response = UrlFetchApp.fetch(url, options);
+    Logger.log( response );
   } catch (e) {
     Logger.log("Error fetching shipment: " + e);
   }
@@ -519,7 +597,6 @@ function insert(carrierID, trackNumber) {
     muteHttpExceptions: true
   };
   
-
   try {
     const response = UrlFetchApp.fetch(url, options);
   } catch (e) {
@@ -602,3 +679,65 @@ function getExtra( id, extra) {
   return value;
 }
 
+function refreshTracking() {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName("Tracking");
+  if (!sheet) {
+    Logger.log("Tracking sheet not found, skipping refresh.");
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) {
+    Logger.log("No tracking data found, skipping refresh.");
+    return;
+  }
+
+  const headers = data[0];
+
+  const colTracking    = headers.indexOf("TrackingNumber");
+  const colInserted    = headers.indexOf("Inserted");
+  const colLastChecked = headers.indexOf("LastChecked");
+
+  if (colTracking === -1 || colLastChecked === -1) {
+    Logger.log("Required columns not found.");
+    return;
+  }
+
+  const now = new Date();
+  const FOUR_HOURS = 4 * 60 * 60 * 1000;
+
+  for (let i = 1; i < data.length; i++) {
+    const trackingNumber = data[i][colTracking];
+    const inserted       = data[i][colInserted];
+    const lastChecked    = data[i][colLastChecked];
+
+    if (!trackingNumber) continue;  // no tracking number
+    if (!inserted) continue;        // not inserted yet
+
+    let shouldUpdate = false;
+
+    // If never checked before → update
+    if (!lastChecked) {
+      shouldUpdate = true;
+    } else {
+      const last = new Date(lastChecked);
+      const diff = now - last;
+
+      if (diff >= FOUR_HOURS) {
+        shouldUpdate = true;
+      }
+    }
+
+    if (shouldUpdate) {
+      // Logger.log("Updating: " + trackingNumber);
+
+      updateTracking(trackingNumber);
+
+      // Update LastChecked timestamp
+      sheet.getRange(i + 1, colLastChecked + 1).setValue(now);
+    }
+  }
+
+  Logger.log("Tracking refresh completed at " + now);
+}

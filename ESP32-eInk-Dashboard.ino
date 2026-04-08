@@ -72,9 +72,11 @@ String buildPage()
   int n = WiFi.scanNetworks();
   for (int i = 0; i < n && i < 48; i++)
   {
-    const char* ssid = WiFi.SSID(i).c_str();
+    String ssid = WiFi.SSID(i);
+    if (ssid.length() == 0) continue;
+
     int w = snprintf(options + optOff, sizeof(options) - optOff,
-                     "<option value='%s'>%s</option>", ssid, ssid);
+                     "<option value='%s'>%s</option>", ssid.c_str(), ssid.c_str());
     if (w < 0 || (size_t)w >= sizeof(options) - optOff) break;
     optOff += (size_t)w;
   }

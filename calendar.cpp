@@ -97,22 +97,23 @@ void drawCalendar(LayoutItem* item)
         {
           // Event day: filled marker.
           int fillRadius = radius;
-          if (isToday && radius > 5) {
-            fillRadius = radius - 3;
+          if (isToday && radius > 6) {
+            fillRadius = radius - 2;
           }
 
           display.fillCircle(x, y - 5, fillRadius, GxEPD_BLACK);
 
-          drawSparseStringCentered(&epaperFont, x, y, buf, GxEPD_WHITE);
-
           if (isToday)
           {
-            // Today + event: keep the filled event circle, add a white gap,
-            // then the double black outline outside.
-            display.drawCircle(x, y - 5, radius - 1, GxEPD_WHITE);
+            // Today + event: filled black center, visible white gap,
+            // then the normal double black outline outside.
+            display.fillCircle(x, y - 5, radius - 1, GxEPD_WHITE);
+            display.fillCircle(x, y - 5, fillRadius, GxEPD_BLACK);
             display.drawCircle(x, y - 5, radius, GxEPD_BLACK);
             display.drawCircle(x, y - 5, radius + 1, GxEPD_BLACK);
           }
+
+          drawSparseStringCentered(&epaperFont, x, y, buf, GxEPD_WHITE);
         }
         else
         {
