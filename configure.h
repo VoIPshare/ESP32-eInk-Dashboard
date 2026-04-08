@@ -17,7 +17,7 @@
 #define USE_ZIGBEE          0
 #endif
 
-#if USE_ZIGBEE && !defined(CONFIG_IDF_TARGET_ESP32C6)
+#if USE_ZIGBEE && !defined(CONFIG_IDF_TARGET_ESP32C6) && !defined(ARDUINO_ESP32C6_DEV)
 #error "USE_ZIGBEE currently supports the ESP32-C6 build in this project."
 #endif
 
