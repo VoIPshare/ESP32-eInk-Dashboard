@@ -681,39 +681,6 @@ void startAP() {
 
   Serial.println("Start AP");
 
-  // display.display(true);  // full refresh
-
-#ifdef PIN_DISPLAYPOWER
-  pinMode(PIN_DISPLAYPOWER, OUTPUT);
-  digitalWrite(PIN_DISPLAYPOWER, HIGH);
-  delay(50);
-#endif
-
-  SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
-  // Display a message on the e-paper
-  display.init(115200, true, 2, false);  // Full refresh
-  display.setRotation(0);
-  display.setFullWindow();
-  display.fillScreen(GxEPD_WHITE);
-
-
-
-  display.firstPage();
-  do {
-    // Draw centered text
-    drawSparseStringCentered(&epaperFont, 400, 175, "ESP32 AP Mode", GxEPD_BLACK);
-    drawSparseStringCentered(&epaperFont, 400, 275, "Connect to Dashboard-Setup and go to", GxEPD_BLACK);
-    drawSparseStringCentered(&epaperFont, 400, 325, "http://192.168.4.1", GxEPD_BLACK);
-    drawSparseStringCentered(&epaperFont, 400, 375, "For the first configuration!", GxEPD_BLACK);
-
-  } while (display.nextPage());
-
-  DBG(F("Display configured"));
-
-  display.powerOff();
-
-  DBG(F("Start the AP for the first configuration"));
-
   bool result = WiFi.softAP("Dashbboard-Setup");
 
   if (result) {
@@ -728,6 +695,32 @@ void startAP() {
   server.on("/", handleConfig);
   server.on("/save", HTTP_POST, handleSave);
   server.begin();
+
+  DBG(F("AP and config server started"));
+
+  // display.display(true);  // full refresh
+#ifdef PIN_DISPLAYPOWER
+  pinMode(PIN_DISPLAYPOWER, OUTPUT);
+  digitalWrite(PIN_DISPLAYPOWER, HIGH);
+  delay(50);
+#endif
+
+  SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
+  display.init(115200, true, 2, false);  // Full refresh
+  display.setRotation(0);
+  display.setFullWindow();
+  display.fillScreen(GxEPD_WHITE);
+
+  display.firstPage();
+  do {
+    drawSparseStringCentered(&epaperFont, 400, 175, "ESP32 AP Mode", GxEPD_BLACK);
+    drawSparseStringCentered(&epaperFont, 400, 275, "Connect to Dashboard-Setup and go to", GxEPD_BLACK);
+    drawSparseStringCentered(&epaperFont, 400, 325, "http://192.168.4.1", GxEPD_BLACK);
+    drawSparseStringCentered(&epaperFont, 400, 375, "For the first configuration!", GxEPD_BLACK);
+  } while (display.nextPage());
+
+  DBG(F("Display configured"));
+  display.powerOff();
 }
 
 // Should serparate it in order to force also reading the layout
