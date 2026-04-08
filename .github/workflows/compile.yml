@@ -20,16 +20,19 @@ jobs:
             fqbn: esp32:esp32:esp32
             board-options: PartitionScheme=custom
             build-dir: build_esp32
+            extra-cpp-flags: -DUSE_COLORDISPLAY=0
 
           - name: ESP32C6
             fqbn: esp32:esp32:esp32c6
             board-options: PartitionScheme=custom
             build-dir: build_esp32c6
+            extra-cpp-flags: -DUSE_COLORDISPLAY=0
 
           - name: ESP32C6-Zigbee
             fqbn: esp32:esp32:esp32c6
             board-options: PartitionScheme=custom,ZigbeeMode=zczr
             build-dir: build_esp32c6_zigbee
+            extra-cpp-flags: -DUSE_COLORDISPLAY=0 -DUSE_ZIGBEE=1
 
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +101,7 @@ jobs:
             --board-options ${{ matrix.board-options }} \
             --build-property "build.custom_partitions=$GITHUB_WORKSPACE/partitions.csv" \
             --build-property "upload.maximum_size=3604480" \
-            --build-property "compiler.cpp.extra_flags=-DUSE_COLORDISPLAY=0 -DFW_VERSION=\"$VERSION\"" \
+            --build-property "compiler.cpp.extra_flags=${{ matrix.extra-cpp-flags }} -DFW_VERSION=\"$VERSION\"" \
             --export-binaries \
             --output-dir ${{ matrix.build-dir }} \
             ./ESP32-eInk-Dashboard.ino

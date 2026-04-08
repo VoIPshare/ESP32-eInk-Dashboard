@@ -13,7 +13,9 @@
 // Set to 1 to compile the optional Zigbee controller support.
 // For arduino-cli on ESP32-C6, this also requires Zigbee-specific board options:
 //   --fqbn esp32:esp32:esp32c6:PartitionScheme=zigbee_zczr,ZigbeeMode=zczr
+#ifndef USE_ZIGBEE
 #define USE_ZIGBEE          0
+#endif
 
 #if USE_ZIGBEE && !defined(CONFIG_IDF_TARGET_ESP32C6)
 #error "USE_ZIGBEE currently supports the ESP32-C6 build in this project."
@@ -82,4 +84,3 @@ inline constexpr uint32_t MDI_BED          = 0x000F0697;
 inline constexpr uint32_t MDI_NOZZLE       = 0x000F0E5B;
 inline constexpr uint32_t MDI_SPOOL        = 0x000F1294;
 inline constexpr uint32_t MDI_ZIGBEE        = 0x000F0D41;
-
