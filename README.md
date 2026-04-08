@@ -55,28 +55,10 @@ Important notes:
 
 ## Pin Reference
 
-ESP32-C6:
-
-- `EPD_CS=1`
-- `EPD_DC=8`
-- `EPD_RST=14`
-- `EPD_BUSY=7`
-- `EPD_SCK=23`
-- `EPD_MOSI=22`
-- `PIN_DISPLAYPOWER=4`
-- `BAT_PIN=0`
-- `DEMO_BUTTON=GPIO_NUM_2`
-
-ESP32:
-
-- `EPD_CS=15`
-- `EPD_DC=27`
-- `EPD_RST=26`
-- `EPD_BUSY=25`
-- `EPD_SCK=13`
-- `EPD_MOSI=14`
-- `PIN_DISPLAYPOWER=4`
-- `BAT_PIN=35`
+| ESP Model | CS | DC | RST | BUSY | SCK | MOSI | Display Power | Battery | Demo Button |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| ESP32-C6 | `1` | `8` | `14` | `7` | `23` | `22` | `4` | `0` | `GPIO_NUM_2` |
+| ESP32 | `15` | `27` | `26` | `25` | `13` | `14` | `4` | `35` | not used |
 
 Adjust the board and display configuration in [configure.h](/Users/nasoni/ESP32-eInk-Dashboard/configure.h) and [ESP32-eInk-Dashboard.ino](/Users/nasoni/ESP32-eInk-Dashboard/ESP32-eInk-Dashboard.ino) if your hardware differs.
 

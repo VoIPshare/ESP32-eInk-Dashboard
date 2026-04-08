@@ -292,5 +292,6 @@ void fetchBambu(  LayoutItem* infoBambu  )
 }
 
 bool isAuxFanOn() {
+  DBG("Test fan");
   return printer.big_fan1_speed > 0;
 }

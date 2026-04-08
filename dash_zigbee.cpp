@@ -1,11 +1,14 @@
 #include "dash_zigbee.h"
 
 bool s_light_state = false;
+bool s_zigbee_linked = false;
+bool s_zigbee_pairing_failed = false;
 
 #if USE_ZIGBEE
 
 // Zigbee switch endpoint used to control the paired Ikea switch.
 static ZigbeeSwitch zbSwitch(SWITCH_ENDPOINT_NUMBER);
+static bool s_endpoint_registered = false;
 
 static void onLightStateChange(bool state) {
   s_light_state = state;
@@ -19,10 +22,14 @@ static void printBoundDevicesInfo() {
   }
 
   Serial.println("\n[ZB] Bound devices info:");
+  for (const auto &device : zbSwitch.getBoundDevices()) {
+    if (!device) continue;
+    Serial.printf("[ZB] Bound endpoint=%u short=0x%04x\n", device->endpoint, device->short_addr);
+  }
   zbSwitch.getLightState();
 }
 
-static bool beginCoordinatorSession() {
+static bool beginCoordinatorSession(bool allowPairing, uint32_t waitForBindingMs) {
   s_light_state = false;
   Serial.println("\n[ZB] Activating Zigbee coordinator");
 
@@ -30,17 +37,33 @@ static bool beginCoordinatorSession() {
   zbSwitch.allowMultipleBinding(true);
   zbSwitch.setManufacturerAndModel("DIY", "ESP32-C6-Coordinator");
 
-  Zigbee.addEndpoint(&zbSwitch);
-  Zigbee.setRebootOpenNetwork(60);
+  if (!s_endpoint_registered) {
+    Zigbee.addEndpoint(&zbSwitch);
+    s_endpoint_registered = true;
+  }
+  Zigbee.setRebootOpenNetwork(0);
 
   if (!Zigbee.begin(ZIGBEE_COORDINATOR)) {
     Serial.println("[ZB] Failed to start Zigbee");
     ESP.restart();
   }
 
-  while (!zbSwitch.bound()) {
+  if (allowPairing) {
+    Serial.printf("[ZB] Opening pairing window for %lu seconds\n", waitForBindingMs / 1000UL);
+    Zigbee.openNetwork(waitForBindingMs / 1000UL);
+  }
+
+  uint32_t waitStart = millis();
+  while (!zbSwitch.bound() && (millis() - waitStart) < waitForBindingMs) {
     Serial.print(".");
     delay(500);
+  }
+
+  s_zigbee_linked = zbSwitch.bound();
+  s_zigbee_pairing_failed = allowPairing && !s_zigbee_linked;
+  if (!s_zigbee_linked) {
+    Serial.println("\n[ZB] No bound device after pairing window.");
+    return false;
   }
 
   vTaskDelay(300 / portTICK_PERIOD_MS);
@@ -56,7 +79,10 @@ static void endCoordinatorSession() {
 }
 
 void activateCoordinatorReadAndClose(bool flipSwitch) {
-  beginCoordinatorSession();
+  if (!beginCoordinatorSession(true, 60000)) {
+    endCoordinatorSession();
+    return;
+  }
 
   if (flipSwitch) {
     Serial.println("[ZB] Toggle switch");
@@ -95,7 +121,10 @@ void readZigbee() {
 }
 
 bool syncZigbeePower(bool turnOn) {
-  beginCoordinatorSession();
+  if (!beginCoordinatorSession(!s_zigbee_linked, s_zigbee_linked ? 2000 : 60000)) {
+    endCoordinatorSession();
+    return false;
+  }
 
   Serial.printf("[ZB] Setting switch %s\n", turnOn ? "ON" : "OFF");
   bool ok = turnOn ? switchOn() : switchOff();
@@ -111,15 +140,24 @@ bool syncZigbeePower(bool turnOn) {
   return ok;
 }
 
+bool ensureZigbeePaired() {
+  if (beginCoordinatorSession(true, 60000)) {
+    endCoordinatorSession();
+    return true;
+  }
+  endCoordinatorSession();
+  return false;
+}
+
 bool switchOn() {
   if (!zbSwitch.bound()) return false;
-  zbSwitch.lightOn(SWITCH_ENDPOINT_NUMBER);
+  zbSwitch.lightOn();
   return true;
 }
 
 bool switchOff() {
   if (!zbSwitch.bound()) return false;
-  zbSwitch.lightOff(SWITCH_ENDPOINT_NUMBER);
+  zbSwitch.lightOff();
   return true;
 }
 

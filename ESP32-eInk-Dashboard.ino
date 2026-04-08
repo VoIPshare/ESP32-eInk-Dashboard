@@ -41,6 +41,8 @@ bool forceRefreshAfterDemo = false;
 #if USE_ZIGBEE
 bool zigbee_enable = false;
 bool zigbee_wait = true;
+bool zigbee_linked = false;
+bool zigbee_pairing_failed = false;
 
 char zigbee_monitor[CFG_ZIGBEE_STR_MAX];
 uint8_t zigbee_monitor_ep = 1;
@@ -222,7 +224,25 @@ html += R"rawliteral(
       Zigbee automation follows the Bambu aux fan: switch ON when the aux fan is ON, switch OFF when the aux fan is OFF.
       Because the printer data is refreshed periodically, the OFF action can happen about 1 to 5 minutes after the fan stops.
     </div>
+    <label style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <input type="checkbox" name="zigbee_enable" value="1" style="width:auto;margin:0;"
 )rawliteral";
+  html += zigbee_enable ? " checked" : "";
+  html += R"rawliteral(>
+      Enable Zigbee automation
+    </label>
+)rawliteral";
+  if (zigbee_enable) {
+    html += R"rawliteral(<div class="note">)rawliteral";
+    if (zigbee_linked) {
+      html += "Zigbee status: linked. The dashboard will reuse the saved binding.";
+    } else if (zigbee_pairing_failed) {
+      html += "Zigbee status: not linked. Pairing timed out previously. Wake the device and press the Zigbee pairing button; pairing will stay open for up to 60 seconds.";
+    } else {
+      html += "Zigbee status: waiting for first link. Wake the device and press the Zigbee pairing button; pairing will stay open for up to 60 seconds.";
+    }
+    html += R"rawliteral(</div>)rawliteral";
+  }
 #endif
 
 html += R"rawliteral(
@@ -405,6 +425,15 @@ void initTime() {
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
 }
 
+#if USE_ZIGBEE
+static void saveZigbeeStatus() {
+  preferences.begin("config", false);
+  preferences.putBool("zigbee_linked", zigbee_linked);
+  preferences.putBool("zigbee_pairing_failed", zigbee_pairing_failed);
+  preferences.end();
+}
+#endif
+
 
 // Clock widget: uses `infoClock->Extra1` as TZ string (e.g. "EST5EDT,...").
 void updateClock(LayoutItem* infoClock) {
@@ -466,8 +495,11 @@ void drawStatus(LayoutItem* item) {
   int16_t versionWidth = getSparseStringWidth(&epaperFont, versionBuf);
   int16_t iconReserve = 24;
 #if USE_ZIGBEE
-  iconReserve += 20;
+  iconReserve += 40;
 #endif
+  if (isPrinting || previousIsPrinting) {
+    iconReserve += 20;
+  }
   int16_t versionX = item->PosX + item->Width - iconReserve - versionWidth;
   int16_t minVersionX = item->PosX + getSparseStringWidth(&epaperFont, buf) + 8;
   if (versionX < minVersionX) {
@@ -502,11 +534,18 @@ void drawStatus(LayoutItem* item) {
   drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 18, item->PosY + 16, charCode, GxEPD_BLACK);
 #endif
 #if USE_ZIGBEE
-  if (s_light_state) {
-    drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 36, item->PosY + 16,
+  if (zigbee_enable) {
+    drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 54, item->PosY + 16,
                    MDI_ZIGBEE, GxEPD_BLACK);
+    uint32_t zigbeeIcon = zigbee_linked ? (s_light_state ? MDI_POWER_ON : MDI_POWER_OFF) : MDI_ALERT;
+    drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 36, item->PosY + 16,
+                   zigbeeIcon, GxEPD_BLACK);
   }
 #endif
+  if (isPrinting || previousIsPrinting) {
+    drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 72, item->PosY + 16,
+                   MDI_PRINT_ON, GxEPD_BLACK);
+  }
 }
 
 // Partial refresh for one layout region. Useful to reduce ghosting + update time.
@@ -551,6 +590,11 @@ Serial.printf("MQTT P: %s SN: %s IP %s\n", server.arg("mqtt_pass"), server.arg("
   zigbee_enable = server.hasArg("zigbee_enable");
   zigbee_wait = server.hasArg("zigbee_wait");
 
+  if (!zigbee_enable) {
+    zigbee_linked = false;
+    zigbee_pairing_failed = false;
+  }
+
   copyToCfg(zigbee_monitor, sizeof(zigbee_monitor), server.arg("zigbee_monitor"));
   zigbee_monitor_ep = server.arg("zigbee_monitor_ep").toInt();
 
@@ -572,6 +616,8 @@ Serial.printf("MQTT P: %s SN: %s IP %s\n", server.arg("mqtt_pass"), server.arg("
 #if USE_ZIGBEE
   preferences.putBool("zigbee_enable", zigbee_enable);
   preferences.putBool("zigbee_wait", zigbee_wait);
+  preferences.putBool("zigbee_linked", zigbee_linked);
+  preferences.putBool("zigbee_pairing_failed", zigbee_pairing_failed);
 
   preferences.putString("zigbee_monitor", zigbee_monitor);
   preferences.putUInt("zigbee_monitor_ep", zigbee_monitor_ep);
@@ -771,12 +817,42 @@ void drawDemoScreen() {
         drawSparseStringCentered(&epaperFont, centerX, centerY, labels[i], GxEPD_BLACK);
       }
     }
+    drawSparseStringCentered(&epaperFont, 400, 470, "Hold 4s on wake for AP config", GxEPD_BLACK);
   } while (display.nextPage());
 
   forceRefreshAfterDemo = true;
 
   // Serial.println("Demo Mode drawn. Holding for 3 seconds...");
   delay(3000);  // keep the demo visible
+}
+
+constexpr int BUTTON_ACTION_NONE = 0;
+constexpr int BUTTON_ACTION_DEMO = 1;
+constexpr int BUTTON_ACTION_AP = 2;
+
+int readWakeButtonAction() {
+#ifdef DEMO_BUTTON
+  pinMode(DEMO_BUTTON, INPUT_PULLUP);
+  if (digitalRead(DEMO_BUTTON) != HIGH) {
+    return BUTTON_ACTION_NONE;
+  }
+
+  unsigned long pressStart = millis();
+  while (digitalRead(DEMO_BUTTON) == HIGH) {
+    unsigned long heldMs = millis() - pressStart;
+    if (heldMs >= BUTTON_LONG_HOLD_MS) {
+      Serial.println("Button held -> AP config mode");
+      return BUTTON_ACTION_AP;
+    }
+    delay(10);
+  }
+
+  if (millis() - pressStart >= BUTTON_HOLD_MS) {
+    Serial.println("Button held -> Demo mode");
+    return BUTTON_ACTION_DEMO;
+  }
+#endif
+  return BUTTON_ACTION_NONE;
 }
 
 bool startWiFiReliable(const char* ssid, const char* password)
@@ -932,6 +1008,10 @@ void setup() {
 #if USE_ZIGBEE
   zigbee_enable = preferences.getBool("zigbee_enable", false);
   zigbee_wait = preferences.getBool("zigbee_wait", true);
+  zigbee_linked = preferences.getBool("zigbee_linked", false);
+  zigbee_pairing_failed = preferences.getBool("zigbee_pairing_failed", false);
+  s_zigbee_linked = zigbee_linked;
+  s_zigbee_pairing_failed = zigbee_pairing_failed;
 
   memset(zigbee_monitor, 0, sizeof(zigbee_monitor));
   memset(zigbee_control, 0, sizeof(zigbee_control));
@@ -969,21 +1049,17 @@ void setup() {
   LayoutItem* infoCalendar = getLayout(256);
 
 #ifdef DEMO_BUTTON
-#warning Here DEMOBUTTON
-  pinMode(DEMO_BUTTON, INPUT_PULLUP);
-  unsigned long pressStart = 0;
-
-  if (digitalRead(DEMO_BUTTON) == HIGH) {
-    pressStart = millis();
-    while (digitalRead(DEMO_BUTTON) == HIGH) {
-      if (millis() - pressStart >= BUTTON_HOLD_MS) {
-        Serial.println("Button held → Demo mode");
-        drawDemoScreen();
-        fullRefresh = true;
-        break;
-      }
-      delay(10);
-    }
+  switch (readWakeButtonAction()) {
+    case BUTTON_ACTION_AP:
+      startAP();
+      return;
+    case BUTTON_ACTION_DEMO:
+      drawDemoScreen();
+      fullRefresh = true;
+      break;
+    case BUTTON_ACTION_NONE:
+    default:
+      break;
   }
 #endif
 
@@ -1045,21 +1121,6 @@ void setup() {
       if (bambuIf) 
         fetchBambu(infoBambu);
 
-#if USE_ZIGBEE
-      if (zigbee_enable && bambuIf) {
-        bool auxFanOn = isAuxFanOn();
-        int8_t desiredCommand = auxFanOn ? 1 : 0;
-
-        if (zigbee_aux_last_command != desiredCommand) {
-          DBGF("[ZB] Aux fan changed -> Zigbee %s", auxFanOn ? "ON" : "OFF");
-          if (syncZigbeePower(auxFanOn)) {
-            zigbee_aux_last_command = desiredCommand;
-            forceUpdateStatusBar = true;
-          }
-        }
-      }
-#endif
-
       if (proxmoxIf) 
         fetchProxmoxStates(infoProxMox, 3);
 
@@ -1069,7 +1130,34 @@ void setup() {
     WiFi.disconnect(true);
     delay(200);
     WiFi.mode(WIFI_OFF);
+
   }
+
+#if USE_ZIGBEE
+  if (zigbee_enable) {
+    if (!zigbee_linked) {
+      DBGF("[ZB] Zigbee enabled but not linked -> opening pairing for up to 60 seconds");
+      ensureZigbeePaired();
+      zigbee_linked = s_zigbee_linked;
+      zigbee_pairing_failed = s_zigbee_pairing_failed;
+      saveZigbeeStatus();
+    }
+
+    if (zigbee_linked && bambuIf) {
+      bool auxFanOn = isAuxFanOn();
+      int8_t desiredCommand = auxFanOn ? 1 : 0;
+
+      DBGF("[ZB] Syncing Zigbee -> %s", auxFanOn ? "ON" : "OFF");
+      if (syncZigbeePower(auxFanOn)) {
+        zigbee_aux_last_command = desiredCommand;
+        forceUpdateStatusBar = true;
+      }
+      zigbee_linked = s_zigbee_linked;
+      zigbee_pairing_failed = s_zigbee_pairing_failed;
+      saveZigbeeStatus();
+    }
+  }
+#endif
 
   DBGF("Boot Count %d", bootCount);
 

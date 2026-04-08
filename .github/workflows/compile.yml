@@ -20,13 +20,13 @@ jobs:
             fqbn: esp32:esp32:esp32
             board-options: PartitionScheme=custom
             build-dir: build_esp32
-            extra-cpp-flags: -DUSE_COLORDISPLAY=0
+            extra-cpp-flags: -DUSE_COLORDISPLAY=0  -DUSE_ZIGBEE=0
 
           - name: ESP32C6
             fqbn: esp32:esp32:esp32c6
             board-options: PartitionScheme=custom
             build-dir: build_esp32c6
-            extra-cpp-flags: -DUSE_COLORDISPLAY=0
+            extra-cpp-flags: -DUSE_COLORDISPLAY=0 -DUSE_ZIGBEE=0
 
           - name: ESP32C6-Zigbee
             fqbn: esp32:esp32:esp32c6

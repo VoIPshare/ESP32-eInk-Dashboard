@@ -3,6 +3,8 @@
 #include "configure.h"
 
 extern bool s_light_state;
+extern bool s_zigbee_linked;
+extern bool s_zigbee_pairing_failed;
 
 #if USE_ZIGBEE
 #include <Preferences.h>
@@ -17,6 +19,7 @@ void closeZigbee();
 void activateCoordinator();
 void readZigbee();
 bool syncZigbeePower(bool turnOn);
+bool ensureZigbeePaired();
 
 void triggerZigbeeSwitch();
 
