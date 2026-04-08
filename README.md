@@ -197,15 +197,24 @@ https://script.google.com/macros/s/<SCRIPT_ID>/exec
 
 The firmware only needs the `<SCRIPT_ID>` portion. You enter that value on the device setup page, not in the source code.
 
-### Required Spreadsheet Sheets
+### Spreadsheet Setup
 
-Create a spreadsheet with these sheets:
+The easiest setup is to use the bundled spreadsheet template:
+
+1. create a new empty Google spreadsheet in Google Drive
+2. import [ESP32_Import.ods](/Users/nasoni/ESP32-eInk-Dashboard/googleScripts/ESP32_Import.ods)
+3. rename the spreadsheet to `ESP32Dashboard`
+
+The script looks for a spreadsheet with that exact name in Google Drive.
+
+The imported file includes the expected sheets and starter structure for:
 
 - `Stocks`
 - `Tracking`
 - `Layout`
+- `ListCarriers`
 
-Sample CSV files are included in [googleScripts](/Users/nasoni/ESP32-eInk-Dashboard/googleScripts).
+If you prefer a manual setup, sample CSV files are also included in [googleScripts](/Users/nasoni/ESP32-eInk-Dashboard/googleScripts).
 
 ### Layout Tips
 
