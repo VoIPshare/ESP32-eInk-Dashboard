@@ -14,6 +14,7 @@
 #define CFG_ZIGBEE_STR_MAX     33u
 #define CFG_CAL_TITLE_MAX     128u
 #define CFG_PROXMOX_NAME_MAX   96u
+#define CFG_TIMEZONE_MAX       65u
 
 extern char wifi_ssid[CFG_WIFI_SSID_MAX];
 extern char wifi_pass[CFG_WIFI_PASS_MAX];
@@ -22,6 +23,7 @@ extern char mqtt_sn[CFG_MQTT_SN_MAX];
 extern char mqtt_ip[CFG_MQTT_IP_MAX];
 extern uint16_t mqtt_port;
 extern char googleapi[CFG_GOOGLEAPI_MAX];
+extern char device_timezone[CFG_TIMEZONE_MAX];
 
 inline const char* getApiUrl() {
     static char url[200];

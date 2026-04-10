@@ -37,6 +37,7 @@ char mqtt_sn[CFG_MQTT_SN_MAX];
 char mqtt_ip[CFG_MQTT_IP_MAX];
 uint16_t mqtt_port;
 char googleapi[CFG_GOOGLEAPI_MAX];
+char device_timezone[CFG_TIMEZONE_MAX];
 PinConfig activePins = makePinPreset(DEFAULT_PIN_PRESET);
 PinConfig customPins = makePinPreset(PinPreset::Custom);
 PinPreset activePinPreset = DEFAULT_PIN_PRESET;
@@ -535,6 +536,14 @@ html += R"rawliteral(
     <label>Google Script ID</label>
     <input name="googleapi" placeholder="Paste Google Apps Script ID">
 
+    <label>Timezone</label>
+    <input name="device_timezone" value=")rawliteral";
+
+html += device_timezone;
+
+html += R"rawliteral(" placeholder="EST5EDT,M3.2.0/2,M11.1.0/2">
+    <div class="note">Used for the clock when the layout does not provide a timezone in the clock widget Extra1 field.</div>
+
     <hr>
 
     <label>MQTT Server IP</label>
@@ -784,10 +793,10 @@ static void saveZigbeeStatus() {
 // Clock widget: uses `infoClock->Extra1` as TZ string (e.g. "EST5EDT,...").
 void updateClock(LayoutItem* infoClock) {
   if (!infoClock) return;
-  // DBG(F("Update Clock fun"));
-
-  // setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0/2", 1);
-  setenv("TZ", infoClock->Extra1, 1);
+  const char* tzValue = infoClock->Extra1[0] != '\0'
+    ? infoClock->Extra1
+    : (device_timezone[0] != '\0' ? device_timezone : "UTC0");
+  setenv("TZ", tzValue, 1);
 
   tzset();
 
@@ -923,6 +932,7 @@ void handleSave() {
   copyToCfg(wifi_ssid, sizeof(wifi_ssid), server.arg("wifi_ssid"));
   copyToCfg(wifi_pass, sizeof(wifi_pass), server.arg("wifi_pass"));
   copyToCfg(googleapi, sizeof(googleapi), server.arg("googleapi"));
+  copyToCfg(device_timezone, sizeof(device_timezone), server.arg("device_timezone"));
 // Serial.printf("Wifi %s Pass %s", wifi_ssid, wifi_pass);
 
   copyToCfg(mqtt_pass, sizeof(mqtt_pass), server.arg("mqtt_pass"));
@@ -967,6 +977,7 @@ void handleSave() {
   preferences.putString("wifi_ssid", wifi_ssid);
   preferences.putString("wifi_pass", wifi_pass);
   preferences.putString("googleapi", googleapi);
+  preferences.putString("device_timezone", device_timezone);
 
   preferences.putString("mqtt_pass", mqtt_pass);
   preferences.putString("mqtt_sn", mqtt_sn);
@@ -1366,6 +1377,7 @@ void setup() {
   memset(mqtt_sn, 0, sizeof(mqtt_sn));
   memset(mqtt_ip, 0, sizeof(mqtt_ip));
   memset(googleapi, 0, sizeof(googleapi));
+  memset(device_timezone, 0, sizeof(device_timezone));
   preferences.getString("wifi_ssid", wifi_ssid, sizeof(wifi_ssid));
   preferences.getString("wifi_pass", wifi_pass, sizeof(wifi_pass));
   preferences.getString("mqtt_pass", mqtt_pass, sizeof(mqtt_pass));
@@ -1373,6 +1385,10 @@ void setup() {
   preferences.getString("mqtt_ip", mqtt_ip, sizeof(mqtt_ip));
   mqtt_port = preferences.getUInt("mqtt_port", 8883);
   preferences.getString("googleapi", googleapi, sizeof(googleapi));
+  preferences.getString("device_timezone", device_timezone, sizeof(device_timezone));
+  if (device_timezone[0] == '\0') {
+    strncpy(device_timezone, "UTC0", sizeof(device_timezone) - 1);
+  }
   activePinPreset = parsePinPreset(preferences.getString("pin_preset", pinPresetValue(DEFAULT_PIN_PRESET)));
   if (activePinPreset == PinPreset::Esp32C6Default) {
     activePinPreset = PinPreset::Esp32C6SuperMini;
