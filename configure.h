@@ -79,7 +79,7 @@ inline constexpr PinConfig makePinPreset(PinPreset preset) {
     case PinPreset::Esp32C6SuperMini:
       return PinConfig{4, 20, 21, 22, 7, 5, 1, PIN_UNASSIGNED, GPIO_NUM_2};
     case PinPreset::Esp32Default:
-      return PinConfig{15, 27, 26, 25, 13, 14, 4, 35, PIN_UNASSIGNED};
+      return PinConfig{15, 27, 26, 25, 13, 14, 4, 35, GPIO_NUM_33};
     case PinPreset::Custom:
     default:
       return PinConfig{

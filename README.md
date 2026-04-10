@@ -60,7 +60,7 @@ Important notes:
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | ESP32-C6 SuperMini | `4` | `20` | `21` | `22` | `7` | `5` | `1` | not used | `GPIO_NUM_2` |
 | ESP32-C6 | `1` | `8` | `14` | `7` | `23` | `22` | `4` | `0` | `GPIO_NUM_2` |
-| ESP32 | `15` | `27` | `26` | `25` | `13` | `14` | `4` | `35` | not used |
+| ESP32 | `15` | `27` | `26` | `25` | `13` | `14` | `4` | `35` | `GPIO_NUM_33` |
 
 The board wiring now uses a preset-backed pin map in [configure.h](/Users/nasoni/ESP32-eInk-Dashboard/configure.h). The firmware auto-selects the matching default preset for `ESP32` or `ESP32-C6`, and you can switch presets with `applyPinPreset(...)` or provide a fully custom mapping with `setCustomPinConfig(...)` before the display is initialized.
 
@@ -70,13 +70,21 @@ For ESP32-C6 SuperMini boards, the validated preset avoids the onboard RGB LED p
 
 The wake/demo input is optional. If you do not connect a button or touch-output board, the device will still work normally and will wake on timer only.
 
+Demo mode and forced configuration mode require an external trigger on the configured wake/demo pin, such as:
+
+- a physical push button
+- a `TTP223` capacitive touch switch module used as a simple digital output
+
 When a wake/demo button is configured, the firmware checks it at boot and on deep-sleep wake.
 
 - short tap: normal boot, no special action
 - hold about 2 seconds: enter demo mode
 - hold about 6 seconds: force configuration mode / AP setup
 
-For the `ESP32-C6 SuperMini` preset, the wake/demo pin is `GPIO_NUM_2`, which works well with a `TTP223` output used as a simple digital wake signal.
+Preset defaults:
+
+- `ESP32-C6 SuperMini`: wake/demo pin `GPIO_NUM_2`, suitable for a `TTP223` output used as a simple digital wake signal
+- `ESP32`: wake/demo pin `GPIO_NUM_33`
 
 ## Build Options
 
@@ -148,11 +156,21 @@ After flashing:
 The setup page can store:
 
 - Wi-Fi SSID and password
+- device timezone
 - Google Script ID
 - MQTT IP, port, username, and password
+- pin preset selection
+- custom pin mapping when `Custom` is selected
 - optional Zigbee-related settings when Zigbee firmware is enabled
 
 These settings are stored on the device. Depending on upload and erase settings, they may be reset after flashing new firmware.
+
+The AP web configuration page is also where you can:
+
+- choose a predefined board wiring preset
+- expand the `Custom` preset to enter your own pin mapping
+- set the fallback timezone used by the clock when the layout does not define one
+- configure wake/demo behavior through the selected wake/demo input pin
 
 ## Zigbee Notes
 
