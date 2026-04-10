@@ -49,6 +49,12 @@ Boards used during development:
 - ESP32-C6: DFRobot FireBeetle 2 ESP32-C6
 - ESP32-C6 SuperMini: MakerGO-style ESP32-C6 SuperMini clone
 
+Hardware sourcing note:
+
+- the ESP32 boards and accessories used during testing came from common AliExpress-style marketplace listings
+- the e-paper display used during testing was purchased from Amazon
+- clone boards and hats can vary slightly, so verify the pinout if your hardware differs
+
 Important notes:
 
 - most color ePaper displays do not support partial refresh
