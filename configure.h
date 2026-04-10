@@ -48,28 +48,88 @@
 // Pins
 // =======================
 
+inline constexpr int16_t PIN_UNASSIGNED = -1;
+
+struct PinConfig {
+  int16_t epdCs;
+  int16_t epdDc;
+  int16_t epdRst;
+  int16_t epdBusy;
+  int16_t epdSck;
+  int16_t epdMosi;
+  int16_t displayPower;
+  int16_t battery;
+  int16_t demoButton;
+};
+
+enum class PinPreset : uint8_t {
+  Esp32Waveshare,
+  Esp32Default,
+  Esp32C6Default,
+  Esp32C6SuperMini,
+  Custom
+};
+
+inline constexpr PinConfig makePinPreset(PinPreset preset) {
+  switch (preset) {
+    case PinPreset::Esp32Waveshare:
+      return PinConfig{15, 27, 26, 25, 13, 14, 33, 35, PIN_UNASSIGNED};
+    case PinPreset::Esp32C6Default:
+      return PinConfig{1, 8, 14, 7, 23, 22, 4, 0, GPIO_NUM_2};
+    case PinPreset::Esp32C6SuperMini:
+      return PinConfig{4, 20, 21, 22, 7, 5, 1, PIN_UNASSIGNED, GPIO_NUM_2};
+    case PinPreset::Esp32Default:
+      return PinConfig{15, 27, 26, 25, 13, 14, 4, 35, PIN_UNASSIGNED};
+    case PinPreset::Custom:
+    default:
+      return PinConfig{
+        PIN_UNASSIGNED, PIN_UNASSIGNED, PIN_UNASSIGNED,
+        PIN_UNASSIGNED, PIN_UNASSIGNED, PIN_UNASSIGNED,
+        PIN_UNASSIGNED, PIN_UNASSIGNED, PIN_UNASSIGNED
+      };
+  }
+}
+
+// Example override before the display is first touched:
+//   applyPinPreset(PinPreset::Esp32Default);
+//   setCustomPinConfig({15, 27, 26, 25, 13, 14, 4, 35, PIN_UNASSIGNED});
 #if CONFIG_IDF_TARGET_ESP32C6
-#define EPD_CS    1
-#define EPD_DC    8
-#define EPD_RST   14
-#define EPD_BUSY  7
-#define EPD_SCK   23
-#define EPD_MOSI  22
-#define PIN_DISPLAYPOWER   4    // display power enable
-#define BAT_PIN   0   //35
-#define DEMO_BUTTON GPIO_NUM_2
+inline constexpr PinPreset DEFAULT_PIN_PRESET = PinPreset::Esp32C6SuperMini;
 #elif CONFIG_IDF_TARGET_ESP32
-#define EPD_CS    15
-#define EPD_DC    27
-#define EPD_RST   26
-#define EPD_BUSY  25
-#define EPD_SCK   13
-#define EPD_MOSI  14
-#define PIN_DISPLAYPOWER   4    // display power enable
-#define BAT_PIN   35
-// #define DEMO_BUTTON GPIO_NUM_33
+inline constexpr PinPreset DEFAULT_PIN_PRESET = PinPreset::Esp32Default;
+#else
+inline constexpr PinPreset DEFAULT_PIN_PRESET = PinPreset::Custom;
 #endif
 
+extern PinConfig activePins;
+
+inline void applyPinPreset(PinPreset preset) {
+  activePins = makePinPreset(preset);
+}
+
+inline void setCustomPinConfig(const PinConfig& customPins) {
+  activePins = customPins;
+}
+
+inline bool isPinAssigned(int16_t pin) {
+  return pin >= 0;
+}
+
+inline bool hasDisplayPowerPin() {
+  return isPinAssigned(activePins.displayPower);
+}
+
+inline bool hasBatteryPin() {
+  return isPinAssigned(activePins.battery);
+}
+
+inline bool hasDemoButtonPin() {
+  return isPinAssigned(activePins.demoButton);
+}
+
+inline gpio_num_t getDemoWakeGpio() {
+  return static_cast<gpio_num_t>(activePins.demoButton);
+}
 
 #define BUTTON_HOLD_MS       2000     // 2 seconds hold enter demo mode
 #define BUTTON_LONG_HOLD_MS  6000     // 6 seconds hold force reconfigure

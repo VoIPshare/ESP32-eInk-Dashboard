@@ -47,6 +47,7 @@ Boards used during development:
 
 - ESP32: Lolin D32
 - ESP32-C6: DFRobot FireBeetle 2 ESP32-C6
+- ESP32-C6 SuperMini: MakerGO-style ESP32-C6 SuperMini clone
 
 Important notes:
 
@@ -57,10 +58,13 @@ Important notes:
 
 | ESP Model | CS | DC | RST | BUSY | SCK | MOSI | Display Power | Battery | Demo Button |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| ESP32-C6 SuperMini | `4` | `20` | `21` | `22` | `7` | `5` | `1` | not used | `GPIO_NUM_2` |
 | ESP32-C6 | `1` | `8` | `14` | `7` | `23` | `22` | `4` | `0` | `GPIO_NUM_2` |
 | ESP32 | `15` | `27` | `26` | `25` | `13` | `14` | `4` | `35` | not used |
 
-Adjust the board and display configuration in [configure.h](/Users/nasoni/ESP32-eInk-Dashboard/configure.h) and [ESP32-eInk-Dashboard.ino](/Users/nasoni/ESP32-eInk-Dashboard/ESP32-eInk-Dashboard.ino) if your hardware differs.
+The board wiring now uses a preset-backed pin map in [configure.h](/Users/nasoni/ESP32-eInk-Dashboard/configure.h). The firmware auto-selects the matching default preset for `ESP32` or `ESP32-C6`, and you can switch presets with `applyPinPreset(...)` or provide a fully custom mapping with `setCustomPinConfig(...)` before the display is initialized.
+
+For ESP32-C6 SuperMini boards, the validated preset avoids the onboard RGB LED pin on `GPIO8` and turns the onboard LEDs off in firmware when that preset is selected.
 
 ## Build Options
 

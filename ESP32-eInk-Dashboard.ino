@@ -12,6 +12,9 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include <cstring>
+#include <cstdarg>
+#include <new>
+#include <esp32-hal-rgb-led.h>
 
 static void copyToCfg(char* dest, size_t cap, const String& s) {
   if (!dest || cap == 0) return;
@@ -34,6 +37,9 @@ char mqtt_sn[CFG_MQTT_SN_MAX];
 char mqtt_ip[CFG_MQTT_IP_MAX];
 uint16_t mqtt_port;
 char googleapi[CFG_GOOGLEAPI_MAX];
+PinConfig activePins = makePinPreset(DEFAULT_PIN_PRESET);
+PinConfig customPins = makePinPreset(PinPreset::Custom);
+PinPreset activePinPreset = DEFAULT_PIN_PRESET;
 
 bool forceUpdateStatusBar = false;
 bool forceRefreshAfterDemo = false;
@@ -63,26 +69,300 @@ bool fullRefresh;
 constexpr float BAT_MIN_V = 3.0f;
 constexpr float BAT_MAX_V = 3.9f;
 
+const char* pinPresetValue(PinPreset preset) {
+  switch (preset) {
+    case PinPreset::Esp32Waveshare: return "esp32_waveshare";
+    case PinPreset::Esp32Default: return "esp32";
+    case PinPreset::Esp32C6Default: return "esp32_c6";
+    case PinPreset::Esp32C6SuperMini: return "esp32_c6_supermini";
+    case PinPreset::Custom:
+    default: return "custom";
+  }
+}
+
+const char* pinPresetLabel(PinPreset preset) {
+  switch (preset) {
+    case PinPreset::Esp32Waveshare: return "ESP32 Waveshare";
+    case PinPreset::Esp32Default: return "ESP32";
+    case PinPreset::Esp32C6Default: return "ESP32 C6";
+    case PinPreset::Esp32C6SuperMini: return "ESP32-C6 SuperMini";
+    case PinPreset::Custom:
+    default: return "Custom";
+  }
+}
+
+PinPreset parsePinPreset(const String& value) {
+  if (value == "esp32_waveshare") return PinPreset::Esp32Waveshare;
+  if (value == "esp32") return PinPreset::Esp32Default;
+  if (value == "esp32_c6") return PinPreset::Esp32C6Default;
+  if (value == "esp32_c6_supermini" || value == "esp32_c6_mini") return PinPreset::Esp32C6SuperMini;
+  if (value == "custom") return PinPreset::Custom;
+  return DEFAULT_PIN_PRESET;
+}
+
+void applyBoardSpecificPinSetup();
+
+void applyStoredPinSelection() {
+  if (activePinPreset == PinPreset::Custom) {
+    setCustomPinConfig(customPins);
+  } else {
+    applyPinPreset(activePinPreset);
+  }
+  applyBoardSpecificPinSetup();
+}
+
+int16_t readPinField(const String& name) {
+  if (!server.hasArg(name)) return PIN_UNASSIGNED;
+  String value = server.arg(name);
+  value.trim();
+  if (value.length() == 0) return PIN_UNASSIGNED;
+  return static_cast<int16_t>(value.toInt());
+}
+
+void saveCustomPinConfig(Preferences& prefs, const PinConfig& pins) {
+  prefs.putInt("pin_epd_cs", pins.epdCs);
+  prefs.putInt("pin_epd_dc", pins.epdDc);
+  prefs.putInt("pin_epd_rst", pins.epdRst);
+  prefs.putInt("pin_epd_busy", pins.epdBusy);
+  prefs.putInt("pin_epd_sck", pins.epdSck);
+  prefs.putInt("pin_epd_mosi", pins.epdMosi);
+  prefs.putInt("pin_disp_power", pins.displayPower);
+  prefs.putInt("pin_battery", pins.battery);
+  prefs.putInt("pin_demo_btn", pins.demoButton);
+}
+
+PinConfig loadCustomPinConfig(Preferences& prefs, const PinConfig& fallback) {
+  PinConfig pins = fallback;
+  pins.epdCs = static_cast<int16_t>(prefs.getInt("pin_epd_cs", fallback.epdCs));
+  pins.epdDc = static_cast<int16_t>(prefs.getInt("pin_epd_dc", fallback.epdDc));
+  pins.epdRst = static_cast<int16_t>(prefs.getInt("pin_epd_rst", fallback.epdRst));
+  pins.epdBusy = static_cast<int16_t>(prefs.getInt("pin_epd_busy", fallback.epdBusy));
+  pins.epdSck = static_cast<int16_t>(prefs.getInt("pin_epd_sck", fallback.epdSck));
+  pins.epdMosi = static_cast<int16_t>(prefs.getInt("pin_epd_mosi", fallback.epdMosi));
+  pins.displayPower = static_cast<int16_t>(prefs.getInt("pin_disp_power", fallback.displayPower));
+  pins.battery = static_cast<int16_t>(prefs.getInt("pin_battery", fallback.battery));
+  pins.demoButton = static_cast<int16_t>(prefs.getInt("pin_demo_btn", fallback.demoButton));
+  return pins;
+}
+
+void pinValueToText(int16_t pin, char* out, size_t outSize) {
+  if (outSize == 0) return;
+  if (isPinAssigned(pin)) {
+    snprintf(out, outSize, "%d", pin);
+  } else {
+    out[0] = '\0';
+  }
+}
+
+bool hasRequiredDisplayPins(const PinConfig& pins) {
+  return isPinAssigned(pins.epdCs) &&
+         isPinAssigned(pins.epdDc) &&
+         isPinAssigned(pins.epdRst) &&
+         isPinAssigned(pins.epdBusy) &&
+         isPinAssigned(pins.epdSck) &&
+         isPinAssigned(pins.epdMosi);
+}
+
+void forceSuperMiniLedsOff() {
+  pinMode(15, OUTPUT);
+  digitalWrite(15, LOW);
+  rgbLedWrite(8, 0, 0, 0);
+  delay(2);
+  rgbLedWrite(8, 0, 0, 0);
+}
+
+void flashSuperMiniStatusLed(uint8_t red, uint8_t green, uint8_t blue, uint8_t flashes, uint16_t onMs, uint16_t offMs) {
+  if (activePinPreset != PinPreset::Esp32C6SuperMini) return;
+
+  for (uint8_t i = 0; i < flashes; ++i) {
+    rgbLedWrite(8, red, green, blue);
+    delay(onMs);
+    forceSuperMiniLedsOff();
+    if (i + 1 < flashes) {
+      delay(offMs);
+    }
+  }
+}
+
+void signalPrintTransition() {
+  if (activePinPreset != PinPreset::Esp32C6SuperMini) return;
+
+  if (!previousIsPrinting && isPrinting) {
+    // Green pulse when a print starts.
+    flashSuperMiniStatusLed(0, 48, 0, 2, 140, 90);
+  } else if (previousIsPrinting && !isPrinting) {
+    // Blue pulse when a print finishes or leaves the printing state.
+    flashSuperMiniStatusLed(0, 0, 48, 3, 120, 80);
+  }
+}
+
+void applyBoardSpecificPinSetup() {
+  if (activePinPreset == PinPreset::Esp32C6SuperMini) {
+    // SuperMini board LEDs: GPIO15 simple LED and GPIO8 WS2812 RGB LED.
+    forceSuperMiniLedsOff();
+  }
+}
+
+void appendFormat(String& out, const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  va_list argsCopy;
+  va_copy(argsCopy, args);
+  int needed = vsnprintf(nullptr, 0, fmt, argsCopy);
+  va_end(argsCopy);
+  if (needed <= 0) {
+    va_end(args);
+    return;
+  }
+
+  char* buffer = new char[needed + 1];
+  vsnprintf(buffer, needed + 1, fmt, args);
+  va_end(args);
+  out += buffer;
+  delete[] buffer;
+}
+
 /* --------------------------------------------------
    HTML PAGE (stored in flash to save RAM)
    -------------------------------------------------- */
 
 String buildPage()
 {
-  char options[3072];
-  options[0] = '\0';
-  size_t optOff = 0;
+  String options;
+  options.reserve(3072);
   int n = WiFi.scanNetworks();
   for (int i = 0; i < n && i < 48; i++)
   {
     String ssid = WiFi.SSID(i);
     if (ssid.length() == 0) continue;
-
-    int w = snprintf(options + optOff, sizeof(options) - optOff,
-                     "<option value='%s'>%s</option>", ssid.c_str(), ssid.c_str());
-    if (w < 0 || (size_t)w >= sizeof(options) - optOff) break;
-    optOff += (size_t)w;
+    options += "<option value='";
+    options += ssid;
+    options += "'>";
+    options += ssid;
+    options += "</option>";
   }
+
+  String pinPresetOptions;
+  pinPresetOptions.reserve(768);
+  const PinPreset presets[] = {
+    PinPreset::Esp32Waveshare,
+    PinPreset::Esp32Default,
+    PinPreset::Esp32C6Default,
+    PinPreset::Esp32C6SuperMini,
+    PinPreset::Custom
+  };
+  for (PinPreset preset : presets) {
+    pinPresetOptions += "<option value='";
+    pinPresetOptions += pinPresetValue(preset);
+    pinPresetOptions += "'";
+    if (preset == activePinPreset) pinPresetOptions += " selected";
+    pinPresetOptions += ">";
+    pinPresetOptions += pinPresetLabel(preset);
+    pinPresetOptions += "</option>";
+  }
+
+  String pinPresetJs;
+  pinPresetJs.reserve(1400);
+  appendFormat(pinPresetJs, R"rawliteral(
+const presetPins = {
+  "esp32_waveshare": { epdCs:%d, epdDc:%d, epdRst:%d, epdBusy:%d, epdSck:%d, epdMosi:%d, displayPower:%d, battery:%d, demoButton:%d },
+  "esp32": { epdCs:%d, epdDc:%d, epdRst:%d, epdBusy:%d, epdSck:%d, epdMosi:%d, displayPower:%d, battery:%d, demoButton:%d },
+  "esp32_c6": { epdCs:%d, epdDc:%d, epdRst:%d, epdBusy:%d, epdSck:%d, epdMosi:%d, displayPower:%d, battery:%d, demoButton:%d },
+  "esp32_c6_supermini": { epdCs:%d, epdDc:%d, epdRst:%d, epdBusy:%d, epdSck:%d, epdMosi:%d, displayPower:%d, battery:%d, demoButton:%d }
+};
+let previousPinPreset = "%s";
+  )rawliteral",
+    makePinPreset(PinPreset::Esp32Waveshare).epdCs,
+    makePinPreset(PinPreset::Esp32Waveshare).epdDc,
+    makePinPreset(PinPreset::Esp32Waveshare).epdRst,
+    makePinPreset(PinPreset::Esp32Waveshare).epdBusy,
+    makePinPreset(PinPreset::Esp32Waveshare).epdSck,
+    makePinPreset(PinPreset::Esp32Waveshare).epdMosi,
+    makePinPreset(PinPreset::Esp32Waveshare).displayPower,
+    makePinPreset(PinPreset::Esp32Waveshare).battery,
+    makePinPreset(PinPreset::Esp32Waveshare).demoButton,
+    makePinPreset(PinPreset::Esp32Default).epdCs,
+    makePinPreset(PinPreset::Esp32Default).epdDc,
+    makePinPreset(PinPreset::Esp32Default).epdRst,
+    makePinPreset(PinPreset::Esp32Default).epdBusy,
+    makePinPreset(PinPreset::Esp32Default).epdSck,
+    makePinPreset(PinPreset::Esp32Default).epdMosi,
+    makePinPreset(PinPreset::Esp32Default).displayPower,
+    makePinPreset(PinPreset::Esp32Default).battery,
+    makePinPreset(PinPreset::Esp32Default).demoButton,
+    makePinPreset(PinPreset::Esp32C6Default).epdCs,
+    makePinPreset(PinPreset::Esp32C6Default).epdDc,
+    makePinPreset(PinPreset::Esp32C6Default).epdRst,
+    makePinPreset(PinPreset::Esp32C6Default).epdBusy,
+    makePinPreset(PinPreset::Esp32C6Default).epdSck,
+    makePinPreset(PinPreset::Esp32C6Default).epdMosi,
+    makePinPreset(PinPreset::Esp32C6Default).displayPower,
+    makePinPreset(PinPreset::Esp32C6Default).battery,
+    makePinPreset(PinPreset::Esp32C6Default).demoButton,
+    makePinPreset(PinPreset::Esp32C6SuperMini).epdCs,
+    makePinPreset(PinPreset::Esp32C6SuperMini).epdDc,
+    makePinPreset(PinPreset::Esp32C6SuperMini).epdRst,
+    makePinPreset(PinPreset::Esp32C6SuperMini).epdBusy,
+    makePinPreset(PinPreset::Esp32C6SuperMini).epdSck,
+    makePinPreset(PinPreset::Esp32C6SuperMini).epdMosi,
+    makePinPreset(PinPreset::Esp32C6SuperMini).displayPower,
+    makePinPreset(PinPreset::Esp32C6SuperMini).battery,
+    makePinPreset(PinPreset::Esp32C6SuperMini).demoButton,
+    pinPresetValue(activePinPreset)
+  );
+
+  char displayPowerValue[12];
+  char batteryValue[12];
+  char demoButtonValue[12];
+  pinValueToText(customPins.displayPower, displayPowerValue, sizeof(displayPowerValue));
+  pinValueToText(customPins.battery, batteryValue, sizeof(batteryValue));
+  pinValueToText(customPins.demoButton, demoButtonValue, sizeof(demoButtonValue));
+
+  String customPinInputs;
+  customPinInputs.reserve(2200);
+  appendFormat(customPinInputs, R"rawliteral(
+    <div id="customPinFields" class="pin-fields" style="display:%s;">
+      <div class="note">Custom mode lets you override every display-related pin. Leave optional fields empty to disable them.</div>
+
+      <label>EPD CS</label>
+      <input type="number" name="pin_epd_cs" value="%d" placeholder="Chip select">
+
+      <label>EPD DC</label>
+      <input type="number" name="pin_epd_dc" value="%d" placeholder="Data/command">
+
+      <label>EPD RST</label>
+      <input type="number" name="pin_epd_rst" value="%d" placeholder="Reset">
+
+      <label>EPD BUSY</label>
+      <input type="number" name="pin_epd_busy" value="%d" placeholder="Busy">
+
+      <label>EPD SCK</label>
+      <input type="number" name="pin_epd_sck" value="%d" placeholder="SPI clock">
+
+      <label>EPD MOSI</label>
+      <input type="number" name="pin_epd_mosi" value="%d" placeholder="SPI MOSI">
+
+      <label>Display Power Pin (optional)</label>
+      <input type="number" name="pin_display_power" value="%s" placeholder="Leave empty if unused">
+
+      <label>Battery Pin (optional)</label>
+      <input type="number" name="pin_battery" value="%s" placeholder="Leave empty if unused">
+
+      <label>Demo Button Pin (optional)</label>
+      <input type="number" name="pin_demo_button" value="%s" placeholder="Leave empty if unused">
+    </div>
+  )rawliteral",
+    activePinPreset == PinPreset::Custom ? "block" : "none",
+    customPins.epdCs,
+    customPins.epdDc,
+    customPins.epdRst,
+    customPins.epdBusy,
+    customPins.epdSck,
+    customPins.epdMosi,
+    displayPowerValue,
+    batteryValue,
+    demoButtonValue
+  );
 
   String html = R"rawliteral(
 <!DOCTYPE html>
@@ -166,14 +446,65 @@ button:hover{
   font-size:13px;
   line-height:1.4;
 }
+
+.pin-fields{
+  margin-top:8px;
+  border-top:1px solid #e4e9ee;
+  padding-top:14px;
+}
 </style>
 
 <script>
+  )rawliteral";
+
+html += pinPresetJs;
+
+html += R"rawliteral(
+function setPinField(name, value){
+  const field = document.getElementsByName(name)[0];
+  if(!field) return;
+  field.value = value >= 0 ? value : "";
+}
+
+function applyPresetValues(presetKey){
+  const pins = presetPins[presetKey];
+  if(!pins) return;
+  setPinField("pin_epd_cs", pins.epdCs);
+  setPinField("pin_epd_dc", pins.epdDc);
+  setPinField("pin_epd_rst", pins.epdRst);
+  setPinField("pin_epd_busy", pins.epdBusy);
+  setPinField("pin_epd_sck", pins.epdSck);
+  setPinField("pin_epd_mosi", pins.epdMosi);
+  setPinField("pin_display_power", pins.displayPower);
+  setPinField("pin_battery", pins.battery);
+  setPinField("pin_demo_button", pins.demoButton);
+}
+
+function toggleCustomPins(){
+  const preset = document.getElementById("pin_preset").value;
+  const customPins = document.getElementById("customPinFields");
+  customPins.style.display = preset === "custom" ? "block" : "none";
+  if(preset === "custom" && previousPinPreset !== "custom"){
+    applyPresetValues(previousPinPreset);
+  }
+  previousPinPreset = preset;
+}
+
 function validateForm(){
   const ssid = document.getElementById("wifi_ssid").value;
   if(ssid.length === 0){
     alert("WiFi SSID cannot be empty");
     return false;
+  }
+  if(document.getElementById("pin_preset").value === "custom"){
+    const required = ["pin_epd_cs","pin_epd_dc","pin_epd_rst","pin_epd_busy","pin_epd_sck","pin_epd_mosi"];
+    for(const fieldId of required){
+      const field = document.getElementsByName(fieldId)[0];
+      if(!field || field.value.trim().length === 0){
+        alert("Please fill all required custom display pins.");
+        return false;
+      }
+    }
   }
   return true;
 }
@@ -217,6 +548,22 @@ html += R"rawliteral(
 
     <label>MQTT Password</label>
     <input name="mqtt_pass" placeholder="Password">
+
+    <hr>
+
+    <label>Pin Preset</label>
+    <select id="pin_preset" name="pin_preset" onchange="toggleCustomPins()">
+)rawliteral";
+
+html += pinPresetOptions;
+
+html += R"rawliteral(
+    </select>
+)rawliteral";
+
+html += customPinInputs;
+
+html += R"rawliteral(
 )rawliteral";
 
 #if USE_ZIGBEE
@@ -263,20 +610,18 @@ html += R"rawliteral(
   return html;
 }
 
-#if USE_COLORDISPLAY
-// 7.5" 4-color panel (GDEM075F52)
-GxEPD2_4C< GxEPD2_750c_GDEM075F52, GxEPD2_750c_GDEM075F52::HEIGHT / 2> display(
-  GxEPD2_750c_GDEM075F52(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
-#else
-GxEPD2_BW<GxEPD2_750_T7, GxEPD2_750_T7::HEIGHT> display(
-  GxEPD2_750_T7(
-    EPD_CS,   // CS
-    EPD_DC,   // DC
-    EPD_RST,  // RST
-    EPD_BUSY  // BUSY
-    ));
+namespace {
+alignas(DashboardDisplay) uint8_t displayStorage[sizeof(DashboardDisplay)];
+DashboardDisplay* displayInstance = nullptr;
+}
 
-#endif
+DashboardDisplay& getDisplay() {
+  if (displayInstance == nullptr) {
+    displayInstance = new (displayStorage) DashboardDisplay(
+      DashboardPanel(activePins.epdCs, activePins.epdDc, activePins.epdRst, activePins.epdBusy));
+  }
+  return *displayInstance;
+}
 
 const GFXglyph* findGlyph(const SparseGFXfont* font, uint32_t code) {
   int low = 0;
@@ -466,18 +811,17 @@ void updateClock(LayoutItem* infoClock) {
 // =======================
 // Battery Read
 // =======================
-#ifdef BAT_PIN
 float readBattery() {
+  if (!hasBatteryPin()) return 0.0f;
   float calibrationFactor = 1.05;  // tune with multimeter
   analogReadResolution(12);
-  uint16_t raw = analogRead(BAT_PIN);
+  uint16_t raw = analogRead(activePins.battery);
   float voltage = raw * 3.3 / 4095.0 * 2.0 * calibrationFactor;
   return voltage;
 }
-#endif
 
 void drawStatus(LayoutItem* item) {
-  #ifdef  BAT_PIN
+  if (!hasBatteryPin()) return;
   DBG(F("Battery Draw"));
 
   float voltage = readBattery();
@@ -533,7 +877,6 @@ void drawStatus(LayoutItem* item) {
   }
 
   drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 18, item->PosY + 16, charCode, GxEPD_BLACK);
-#endif
 #if USE_ZIGBEE
   if (zigbee_enable) {
     drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 54, item->PosY + 16,
@@ -586,7 +929,23 @@ void handleSave() {
   copyToCfg(mqtt_sn, sizeof(mqtt_sn), server.arg("mqtt_sn"));
   copyToCfg(mqtt_ip, sizeof(mqtt_ip), server.arg("mqtt_ip"));
   mqtt_port = server.arg("mqtt_port").toInt();
-Serial.printf("MQTT P: %s SN: %s IP %s\n", server.arg("mqtt_pass"), server.arg("mqtt_sn").c_str(), server.arg("mqtt_ip").c_str());
+  activePinPreset = parsePinPreset(server.arg("pin_preset"));
+  customPins.epdCs = readPinField("pin_epd_cs");
+  customPins.epdDc = readPinField("pin_epd_dc");
+  customPins.epdRst = readPinField("pin_epd_rst");
+  customPins.epdBusy = readPinField("pin_epd_busy");
+  customPins.epdSck = readPinField("pin_epd_sck");
+  customPins.epdMosi = readPinField("pin_epd_mosi");
+  customPins.displayPower = readPinField("pin_display_power");
+  customPins.battery = readPinField("pin_battery");
+  customPins.demoButton = readPinField("pin_demo_button");
+  if (activePinPreset == PinPreset::Custom && !hasRequiredDisplayPins(customPins)) {
+    server.send(400, "text/plain", "Custom preset requires CS, DC, RST, BUSY, SCK and MOSI pins.");
+    return;
+  }
+  applyStoredPinSelection();
+
+  Serial.printf("MQTT P: %u SN: %s IP %s\n", mqtt_port, mqtt_sn, mqtt_ip);
 #if USE_ZIGBEE
   zigbee_enable = server.hasArg("zigbee_enable");
   zigbee_wait = server.hasArg("zigbee_wait");
@@ -613,6 +972,8 @@ Serial.printf("MQTT P: %s SN: %s IP %s\n", server.arg("mqtt_pass"), server.arg("
   preferences.putString("mqtt_sn", mqtt_sn);
   preferences.putString("mqtt_ip", mqtt_ip);
   preferences.putUInt("mqtt_port", mqtt_port);
+  preferences.putString("pin_preset", pinPresetValue(activePinPreset));
+  saveCustomPinConfig(preferences, customPins);
 
 #if USE_ZIGBEE
   preferences.putBool("zigbee_enable", zigbee_enable);
@@ -747,13 +1108,13 @@ void startAP() {
   DBG(F("AP and config server started"));
 
   // display.display(true);  // full refresh
-#ifdef PIN_DISPLAYPOWER
-  pinMode(PIN_DISPLAYPOWER, OUTPUT);
-  digitalWrite(PIN_DISPLAYPOWER, HIGH);
-  delay(50);
-#endif
+  if (hasDisplayPowerPin()) {
+    pinMode(activePins.displayPower, OUTPUT);
+    digitalWrite(activePins.displayPower, HIGH);
+    delay(50);
+  }
 
-  SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
+  SPI.begin(activePins.epdSck, -1, activePins.epdMosi, activePins.epdCs);
   display.init(115200, true, 2, false);  // Full refresh
   display.setRotation(0);
   display.setFullWindow();
@@ -773,14 +1134,14 @@ void startAP() {
 
 // Should serparate it in order to force also reading the layout
 void drawDemoScreen() {
-#ifdef PIN_DISPLAYPOWER
-  pinMode(PIN_DISPLAYPOWER, OUTPUT);
-  digitalWrite(PIN_DISPLAYPOWER, HIGH);
-  delay(50);
-#endif
+  if (hasDisplayPowerPin()) {
+    pinMode(activePins.displayPower, OUTPUT);
+    digitalWrite(activePins.displayPower, HIGH);
+    delay(50);
+  }
   Serial.println("Entering Demo Mode");
 
-  SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
+  SPI.begin(activePins.epdSck, -1, activePins.epdMosi, activePins.epdCs);
   display.init(115200, true, 2, false);  // full refresh
   display.setRotation(0);
   display.setFullWindow();
@@ -833,14 +1194,17 @@ constexpr int BUTTON_ACTION_DEMO = 1;
 constexpr int BUTTON_ACTION_AP = 2;
 
 int readWakeButtonAction() {
-#ifdef DEMO_BUTTON
-  pinMode(DEMO_BUTTON, INPUT_PULLUP);
-  if (digitalRead(DEMO_BUTTON) != HIGH) {
+  if (!hasDemoButtonPin()) {
+    return BUTTON_ACTION_NONE;
+  }
+
+  pinMode(activePins.demoButton, INPUT_PULLUP);
+  if (digitalRead(activePins.demoButton) != HIGH) {
     return BUTTON_ACTION_NONE;
   }
 
   unsigned long pressStart = millis();
-  while (digitalRead(DEMO_BUTTON) == HIGH) {
+  while (digitalRead(activePins.demoButton) == HIGH) {
     unsigned long heldMs = millis() - pressStart;
     if (heldMs >= BUTTON_LONG_HOLD_MS) {
       Serial.println("Button held -> AP config mode");
@@ -853,7 +1217,6 @@ int readWakeButtonAction() {
     Serial.println("Button held -> Demo mode");
     return BUTTON_ACTION_DEMO;
   }
-#endif
   return BUTTON_ACTION_NONE;
 }
 
@@ -977,6 +1340,10 @@ void setup() {
   delay(2000);
 #endif
 
+  if (activePinPreset == PinPreset::Esp32C6SuperMini) {
+    forceSuperMiniLedsOff();
+  }
+
   fullRefresh = (bootCount % (60 * 24) == 0);
 
 
@@ -1006,6 +1373,15 @@ void setup() {
   preferences.getString("mqtt_ip", mqtt_ip, sizeof(mqtt_ip));
   mqtt_port = preferences.getUInt("mqtt_port", 8883);
   preferences.getString("googleapi", googleapi, sizeof(googleapi));
+  activePinPreset = parsePinPreset(preferences.getString("pin_preset", pinPresetValue(DEFAULT_PIN_PRESET)));
+  if (activePinPreset == PinPreset::Esp32C6Default) {
+    activePinPreset = PinPreset::Esp32C6SuperMini;
+  }
+  customPins = loadCustomPinConfig(preferences, makePinPreset(DEFAULT_PIN_PRESET));
+  applyStoredPinSelection();
+  if (activePinPreset == PinPreset::Esp32C6SuperMini) {
+    forceSuperMiniLedsOff();
+  }
 
 #if USE_ZIGBEE
   zigbee_enable = preferences.getBool("zigbee_enable", false);
@@ -1030,10 +1406,15 @@ void setup() {
   preferences.end();
   delay(200);
 // DBGF("Wifi %s Pass %s", wifi_ssid.c_str(), wifi_pass.c_str());
+
   // Start an AP and server to configure it
   if (wifi_ssid[0] == '\0' || wifi_pass[0] == '\0') {
     startAP();
     return;
+  }
+
+  if (activePinPreset == PinPreset::Esp32C6SuperMini) {
+    forceSuperMiniLedsOff();
   }
 
   // Serial.printf("Is Printing %d Prev %d\n", isPrinting, previousIsPrinting);
@@ -1050,7 +1431,6 @@ void setup() {
   LayoutItem* infoBattery = getLayout(128);
   LayoutItem* infoCalendar = getLayout(256);
 
-#ifdef DEMO_BUTTON
   switch (readWakeButtonAction()) {
     case BUTTON_ACTION_AP:
       startAP();
@@ -1063,7 +1443,6 @@ void setup() {
     default:
       break;
   }
-#endif
 
   if (!hasStoredData) {
     DBG("No stored data → forcing full refresh");
@@ -1121,7 +1500,10 @@ void setup() {
       }
 
       if (bambuIf) 
+      {
         fetchBambu(infoBambu);
+        signalPrintTransition();
+      }
 
       if (proxmoxIf) 
         fetchProxmoxStates(infoProxMox, 3);
@@ -1163,15 +1545,15 @@ void setup() {
 
   DBGF("Boot Count %d", bootCount);
 
-#ifdef PIN_DISPLAYPOWER
-  // Not all hats need it; IO4 powers some e-paper boards.
-  pinMode(PIN_DISPLAYPOWER, OUTPUT);
-  digitalWrite(PIN_DISPLAYPOWER, HIGH);
-  delay(50);
-#endif
+  if (hasDisplayPowerPin()) {
+    // Not all hats need it; IO4 powers some e-paper boards.
+    pinMode(activePins.displayPower, OUTPUT);
+    digitalWrite(activePins.displayPower, HIGH);
+    delay(50);
+  }
 
   // Start SPI and initialize display after deciding refresh mode.
-  SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
+  SPI.begin(activePins.epdSck, -1, activePins.epdMosi, activePins.epdCs);
   display.init(115200, fullRefresh, 2, false);
   display.setRotation(0);
 
@@ -1204,11 +1586,9 @@ void setup() {
 
       if (openMeteoIf) weatherWidget(infoOpenMeteo);
 
-      #ifdef BAT_PIN
-      if( infoBattery )
+      if (hasBatteryPin() && infoBattery)
         drawStatus(infoBattery);
       DBG("HERE AFTER BATTERY");
-      #endif
 
       if (eventIf) gCalWidget(infoEvent);
       if (stocksIf) stockWidget(infoStocks);
@@ -1250,10 +1630,8 @@ void setup() {
     if (calendarIf)
       updatePartial(infoCalendar, drawCalendar);
 
-#ifdef BAT_PIN
-    if (batteryIf || forceUpdateStatusBar)
+    if (hasBatteryPin() && (batteryIf || forceUpdateStatusBar))
       updatePartial(infoBattery, drawStatus);
-#endif
   }
   bootCount++;
   DBGF("Finished Boot %d\n", bootCount);
@@ -1267,16 +1645,18 @@ else
 
   // display.hibernate();
 
-#ifdef PIN_DISPLAYPOWER
-  gpio_hold_en((gpio_num_t)PIN_DISPLAYPOWER);
-#endif
+  if (hasDisplayPowerPin()) {
+    gpio_hold_en((gpio_num_t)activePins.displayPower);
+  }
 
   // Align wakeups to roughly the next minute boundary.
   // int seconds_to_sleep = 60 - timeinfo.tm_sec + 1;
-  esp_sleep_enable_ext1_wakeup(
-    (1ULL << GPIO_NUM_2),     // Pin mask
-    ESP_EXT1_WAKEUP_ANY_HIGH  // Wake when pin goes HIGH
-  );
+  if (hasDemoButtonPin()) {
+    esp_sleep_enable_ext1_wakeup(
+      (1ULL << getDemoWakeGpio()),
+      ESP_EXT1_WAKEUP_ANY_HIGH  // Wake when pin goes HIGH
+    );
+  }
 
   esp_sleep_enable_timer_wakeup((uint64_t)seconds_to_sleep * 1000000ULL);  // 60 secs
 
