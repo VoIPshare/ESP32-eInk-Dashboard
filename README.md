@@ -66,6 +66,18 @@ The board wiring now uses a preset-backed pin map in [configure.h](/Users/nasoni
 
 For ESP32-C6 SuperMini boards, the validated preset avoids the onboard RGB LED pin on `GPIO8` and turns the onboard LEDs off in firmware when that preset is selected.
 
+## Wake Button
+
+The wake/demo input is optional. If you do not connect a button or touch-output board, the device will still work normally and will wake on timer only.
+
+When a wake/demo button is configured, the firmware checks it at boot and on deep-sleep wake.
+
+- short tap: normal boot, no special action
+- hold about 2 seconds: enter demo mode
+- hold about 6 seconds: force configuration mode / AP setup
+
+For the `ESP32-C6 SuperMini` preset, the wake/demo pin is `GPIO_NUM_2`, which works well with a `TTP223` output used as a simple digital wake signal.
+
 ## Build Options
 
 ### Arduino IDE
