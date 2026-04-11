@@ -75,11 +75,11 @@ inline constexpr PinConfig makePinPreset(PinPreset preset) {
     case PinPreset::Esp32Waveshare:
       return PinConfig{15, 27, 26, 25, 13, 14, 33, 35, PIN_UNASSIGNED};
     case PinPreset::Esp32C6Default:
-      return PinConfig{1, 8, 14, 7, 23, 22, 4, 0, GPIO_NUM_2};
+      return PinConfig{1, 8, 14, 7, 23, 22, 4, 0, 2};
     case PinPreset::Esp32C6SuperMini:
-      return PinConfig{4, 20, 21, 22, 7, 5, 1, PIN_UNASSIGNED, GPIO_NUM_2};
+      return PinConfig{4, 20, 21, 22, 7, 5, 1, PIN_UNASSIGNED, 2};
     case PinPreset::Esp32Default:
-      return PinConfig{15, 27, 26, 25, 13, 14, 4, 35, GPIO_NUM_33};
+      return PinConfig{15, 27, 26, 25, 13, 14, 4, 35, 33};
     case PinPreset::Custom:
     default:
       return PinConfig{
@@ -93,8 +93,22 @@ inline constexpr PinConfig makePinPreset(PinPreset preset) {
 // Example override before the display is first touched:
 //   applyPinPreset(PinPreset::Esp32Default);
 //   setCustomPinConfig({15, 27, 26, 25, 13, 14, 4, 35, PIN_UNASSIGNED});
-#if CONFIG_IDF_TARGET_ESP32C6
+#if defined(DEFAULT_PIN_PRESET_ESP32_WAVESHARE)
+inline constexpr PinPreset DEFAULT_PIN_PRESET = PinPreset::Esp32Waveshare;
+#elif defined(DEFAULT_PIN_PRESET_ESP32)
+inline constexpr PinPreset DEFAULT_PIN_PRESET = PinPreset::Esp32Default;
+#elif defined(DEFAULT_PIN_PRESET_ESP32C6_FIREBEETLE)
+inline constexpr PinPreset DEFAULT_PIN_PRESET = PinPreset::Esp32C6Default;
+#elif defined(DEFAULT_PIN_PRESET_ESP32C6_SUPERMINI)
 inline constexpr PinPreset DEFAULT_PIN_PRESET = PinPreset::Esp32C6SuperMini;
+#elif CONFIG_IDF_TARGET_ESP32C6
+  #if defined(ARDUINO_DFROBOT_FIREBEETLE_2_ESP32C6)
+inline constexpr PinPreset DEFAULT_PIN_PRESET = PinPreset::Esp32C6Default;
+  #elif defined(ARDUINO_MAKERGO_C6_SUPERMINI)
+inline constexpr PinPreset DEFAULT_PIN_PRESET = PinPreset::Esp32C6SuperMini;
+  #else
+inline constexpr PinPreset DEFAULT_PIN_PRESET = PinPreset::Esp32C6Default;
+  #endif
 #elif CONFIG_IDF_TARGET_ESP32
 inline constexpr PinPreset DEFAULT_PIN_PRESET = PinPreset::Esp32Default;
 #else

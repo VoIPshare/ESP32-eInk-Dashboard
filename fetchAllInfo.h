@@ -109,7 +109,7 @@ extern WeatherData weather;
 
 extern uint16_t bootCount;
 
-void fetchData();
+bool fetchData();
 void gCalWidget(LayoutItem*);
 void stockWidget(LayoutItem*);
 void trackingWidget(LayoutItem*);

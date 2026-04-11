@@ -20,19 +20,37 @@ jobs:
             fqbn: esp32:esp32:esp32
             board-options: PartitionScheme=custom
             build-dir: build_esp32
-            extra-cpp-flags: -DUSE_COLORDISPLAY=0  -DUSE_ZIGBEE=0
+            extra-cpp-flags: -DUSE_COLORDISPLAY=0 -DUSE_ZIGBEE=0 -DDEFAULT_PIN_PRESET_ESP32
 
-          - name: ESP32C6
-            fqbn: esp32:esp32:esp32c6
+          - name: ESP32-Waveshare
+            fqbn: esp32:esp32:esp32
             board-options: PartitionScheme=custom
-            build-dir: build_esp32c6
-            extra-cpp-flags: -DUSE_COLORDISPLAY=0 -DUSE_ZIGBEE=0
+            build-dir: build_esp32_waveshare
+            extra-cpp-flags: -DUSE_COLORDISPLAY=0 -DUSE_ZIGBEE=0 -DDEFAULT_PIN_PRESET_ESP32_WAVESHARE
 
-          - name: ESP32C6-Zigbee
-            fqbn: esp32:esp32:esp32c6
+          - name: ESP32C6-FireBeetle
+            fqbn: esp32:esp32:dfrobot_firebeetle2_esp32c6
+            board-options: PartitionScheme=custom
+            build-dir: build_esp32c6_firebeetle
+            extra-cpp-flags: -DUSE_COLORDISPLAY=0 -DUSE_ZIGBEE=0 -DDEFAULT_PIN_PRESET_ESP32C6_FIREBEETLE
+
+          - name: ESP32C6-FireBeetle-Zigbee
+            fqbn: esp32:esp32:dfrobot_firebeetle2_esp32c6
             board-options: PartitionScheme=custom,ZigbeeMode=zczr
-            build-dir: build_esp32c6_zigbee
-            extra-cpp-flags: -DUSE_COLORDISPLAY=0 -DUSE_ZIGBEE=1
+            build-dir: build_esp32c6_firebeetle_zigbee
+            extra-cpp-flags: -DUSE_COLORDISPLAY=0 -DUSE_ZIGBEE=1 -DDEFAULT_PIN_PRESET_ESP32C6_FIREBEETLE
+
+          - name: ESP32C6-SuperMini
+            fqbn: esp32:esp32:makergo_c6_supermini
+            board-options: PartitionScheme=custom
+            build-dir: build_esp32c6_supermini
+            extra-cpp-flags: -DUSE_COLORDISPLAY=0 -DUSE_ZIGBEE=0 -DDEFAULT_PIN_PRESET_ESP32C6_SUPERMINI
+
+          - name: ESP32C6-SuperMini-Zigbee
+            fqbn: esp32:esp32:makergo_c6_supermini
+            board-options: PartitionScheme=custom,ZigbeeMode=zczr
+            build-dir: build_esp32c6_supermini_zigbee
+            extra-cpp-flags: -DUSE_COLORDISPLAY=0 -DUSE_ZIGBEE=1 -DDEFAULT_PIN_PRESET_ESP32C6_SUPERMINI
 
     steps:
       - uses: actions/checkout@v4

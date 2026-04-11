@@ -111,14 +111,40 @@ The repo includes [sketch.yaml](/Users/nasoni/ESP32-eInk-Dashboard/sketch.yaml) 
 Standard ESP32 build:
 
 ```bash
-arduino-cli compile --profile esp32_default /Users/nasoni/ESP32-eInk-Dashboard
+arduino-cli compile --profile esp32 /Users/nasoni/ESP32-eInk-Dashboard
 ```
 
-ESP32-C6 Zigbee build:
+ESP32 Waveshare build:
 
 ```bash
-arduino-cli compile --profile esp32c6_zigbee /Users/nasoni/ESP32-eInk-Dashboard
+arduino-cli compile --profile esp32_waveshare /Users/nasoni/ESP32-eInk-Dashboard
 ```
+
+ESP32-C6 FireBeetle build:
+
+```bash
+arduino-cli compile --profile esp32c6_firebeetle /Users/nasoni/ESP32-eInk-Dashboard
+```
+
+ESP32-C6 FireBeetle Zigbee build:
+
+```bash
+arduino-cli compile --profile esp32c6_firebeetle_zigbee /Users/nasoni/ESP32-eInk-Dashboard
+```
+
+ESP32-C6 SuperMini build:
+
+```bash
+arduino-cli compile --profile esp32c6_supermini /Users/nasoni/ESP32-eInk-Dashboard
+```
+
+ESP32-C6 SuperMini Zigbee build:
+
+```bash
+arduino-cli compile --profile esp32c6_supermini_zigbee /Users/nasoni/ESP32-eInk-Dashboard
+```
+
+Only the ESP32-C6 builds have Zigbee variants.
 
 If you prefer a direct command, this Zigbee build works:
 

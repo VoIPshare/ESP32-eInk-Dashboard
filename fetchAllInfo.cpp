@@ -120,23 +120,29 @@ bool loadLayout() {
 // ----------------------- Fetch data from Google Script -----------------------
 // This endpoint is the "single source of truth" for layout + multi-widget data.
 // Layout is cached in Preferences so we can render something even when Wi-Fi fails.
-void fetchData() {
+bool fetchData() {
     stockCount = layoutCount = trackingCount = cal.eventCount = weather.count = 0;
     makerworld = {0, 0, 0, 0, 0, 0, false};
 
-    if (WiFi.status() != WL_CONNECTED) return;
+    if (WiFi.status() != WL_CONNECTED) return false;
+
+    const char* apiUrl = getApiUrl();
+    if (!apiUrl || apiUrl[0] == '\0') {
+        Serial.println("API URL unavailable");
+        return false;
+    }
 
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(28000);
-    Serial.println( getApiUrl() );
-    http.begin( getApiUrl() );
+    Serial.println(apiUrl);
+    http.begin(apiUrl);
 
     int httpCode = http.GET();
     if (httpCode != 200) {
         Serial.printf("HTTP GET failed, code %d\n", httpCode);
         http.end();
-        return;
+        return false;
     }
 
     String payload = http.getString();
@@ -146,7 +152,7 @@ void fetchData() {
     if (deserializeJson(doc, payload)) {
         Serial.println("JSON parse failed!");
         http.end();
-        return;
+        return false;
     }
 
     http.end();
@@ -238,6 +244,8 @@ void fetchData() {
         }
         cal.daysCount = k; // optional: store how many days were actually read
     }
+
+    return true;
 
     // ------------------ Weather parsing ------------------
     if (doc["weather"].is<JsonArray>()) {

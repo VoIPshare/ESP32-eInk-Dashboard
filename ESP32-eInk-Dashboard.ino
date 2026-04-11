@@ -64,6 +64,10 @@ unsigned long previousMillis = 0;
 
 RTC_DATA_ATTR uint16_t bootCount = 0;
 RTC_DATA_ATTR bool lastPrint = false;
+RTC_DATA_ATTR bool pendingApiRetry = false;
+RTC_DATA_ATTR uint8_t apiRetryStreak = 0;
+
+constexpr uint8_t API_RETRY_DISPLAY_THRESHOLD = 10;
 
 bool fullRefresh;
 
@@ -90,6 +94,20 @@ const char* pinPresetLabel(PinPreset preset) {
     case PinPreset::Custom:
     default: return "Custom";
   }
+}
+
+void logPinConfiguration() {
+  DBGF("Pin preset: %s", pinPresetLabel(activePinPreset));
+  DBGF("Pins CS=%d DC=%d RST=%d BUSY=%d SCK=%d MOSI=%d PWR=%d BAT=%d BTN=%d",
+       activePins.epdCs,
+       activePins.epdDc,
+       activePins.epdRst,
+       activePins.epdBusy,
+       activePins.epdSck,
+       activePins.epdMosi,
+       activePins.displayPower,
+       activePins.battery,
+       activePins.demoButton);
 }
 
 PinPreset parsePinPreset(const String& value) {
@@ -830,21 +848,24 @@ float readBattery() {
 }
 
 void drawStatus(LayoutItem* item) {
-  if (!hasBatteryPin()) return;
   DBG(F("Battery Draw"));
 
-  float voltage = readBattery();
-  Serial.println(voltage);
-
-  char buf[20];
-  snprintf(buf, sizeof(buf), "%.2f V", voltage);
+  float voltage = 0.0f;
+  char buf[20] = "";
+  if (hasBatteryPin()) {
+    voltage = readBattery();
+    Serial.println(voltage);
+    snprintf(buf, sizeof(buf), "%.2f V", voltage);
+  }
 
   char versionBuf[32];
   snprintf(versionBuf, sizeof(versionBuf), "v%s", FW_VERSION);
   
   display.fillRect(item->PosX, item->PosY, item->Width, item->Height, GxEPD_WHITE);
 
-  drawSparseString(&epaperFont, item->PosX, item->PosY + 16, buf, GxEPD_BLACK);
+  if (hasBatteryPin()) {
+    drawSparseString(&epaperFont, item->PosX, item->PosY + 16, buf, GxEPD_BLACK);
+  }
 
   int16_t versionWidth = getSparseStringWidth(&epaperFont, versionBuf);
   int16_t iconReserve = 24;
@@ -855,37 +876,39 @@ void drawStatus(LayoutItem* item) {
     iconReserve += 20;
   }
   int16_t versionX = item->PosX + item->Width - iconReserve - versionWidth;
-  int16_t minVersionX = item->PosX + getSparseStringWidth(&epaperFont, buf) + 8;
+  int16_t minVersionX = item->PosX + (hasBatteryPin() ? getSparseStringWidth(&epaperFont, buf) + 8 : 0);
   if (versionX < minVersionX) {
     versionX = minVersionX;
   }
   drawSparseString(&epaperFont, versionX, item->PosY + 16, versionBuf, GxEPD_BLACK);
 
-  float percentage = constrain((voltage - BAT_MIN_V) / (BAT_MAX_V - BAT_MIN_V) * 100.0f, 0, 100);
+  if (hasBatteryPin()) {
+    float percentage = constrain((voltage - BAT_MIN_V) / (BAT_MAX_V - BAT_MIN_V) * 100.0f, 0, 100);
 
-  // Serial.println(percentage);
+    // Serial.println(percentage);
 
-  unsigned int startChar = 983162;  // empty
-  unsigned int endChar = 983170;    // full
+    unsigned int startChar = 983162;  // empty
+    unsigned int endChar = 983170;    // full
 
-  unsigned int numSteps = endChar - startChar;  // 11 steps
-                                                // Clamp percentage 0–100
-  if (percentage > 100.0f) percentage = 100.0f;
-  if (percentage < 0.0f) percentage = 0.0f;
+    unsigned int numSteps = endChar - startChar;  // 11 steps
+                                                  // Clamp percentage 0–100
+    if (percentage > 100.0f) percentage = 100.0f;
+    if (percentage < 0.0f) percentage = 0.0f;
 
-  unsigned int charCode;
+    unsigned int charCode;
 
-  if (percentage < 10.0f) {
-    charCode = startChar;  // <10%
-  } else if (percentage > 90.0f) {
-    charCode = 983161;  // <10%
-  } else {
+    if (percentage < 10.0f) {
+      charCode = startChar;  // <10%
+    } else if (percentage > 90.0f) {
+      charCode = 983161;  // <10%
+    } else {
 
-    // Map 10–100% linearly to remaining steps
-    charCode = startChar + ((percentage - 10.0f) * numSteps / 90.0f) + 1;
+      // Map 10–100% linearly to remaining steps
+      charCode = startChar + ((percentage - 10.0f) * numSteps / 90.0f) + 1;
+    }
+
+    drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 18, item->PosY + 16, charCode, GxEPD_BLACK);
   }
-
-  drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 18, item->PosY + 16, charCode, GxEPD_BLACK);
 #if USE_ZIGBEE
   if (zigbee_enable) {
     drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 54, item->PosY + 16,
@@ -898,6 +921,12 @@ void drawStatus(LayoutItem* item) {
   if (isPrinting || previousIsPrinting) {
     drawSparseChar(&MDI_22_Sparse, item->PosX + item->Width - 72, item->PosY + 16,
                    MDI_PRINT_ON, GxEPD_BLACK);
+  }
+
+  if (apiRetryStreak >= API_RETRY_DISPLAY_THRESHOLD) {
+    char retryBuf[24];
+    snprintf(retryBuf, sizeof(retryBuf), "API retry x%u", apiRetryStreak);
+    drawSparseString(&epaperFont, item->PosX, item->PosY + item->Height - 4, retryBuf, ALERT_COLOR);
   }
 }
 
@@ -1390,11 +1419,9 @@ void setup() {
     strncpy(device_timezone, "UTC0", sizeof(device_timezone) - 1);
   }
   activePinPreset = parsePinPreset(preferences.getString("pin_preset", pinPresetValue(DEFAULT_PIN_PRESET)));
-  if (activePinPreset == PinPreset::Esp32C6Default) {
-    activePinPreset = PinPreset::Esp32C6SuperMini;
-  }
   customPins = loadCustomPinConfig(preferences, makePinPreset(DEFAULT_PIN_PRESET));
   applyStoredPinSelection();
+  logPinConfiguration();
   if (activePinPreset == PinPreset::Esp32C6SuperMini) {
     forceSuperMiniLedsOff();
   }
@@ -1477,19 +1504,26 @@ void setup() {
 
   // Bring Wi-Fi up only when at least one widget needs fresh data.
   bool needWiFi =
-    !hasStoredData || eventIf || stocksIf || openMeteoIf || trackingIf || proxmoxIf || bambuIf || fullRefresh;
+    !hasStoredData || eventIf || stocksIf || openMeteoIf || trackingIf || proxmoxIf || bambuIf || fullRefresh || pendingApiRetry;
 
   // needWiFi=true;
   DBGF(
-    "Bambu %d Print %d Prev %d openMeteo %d ProxMox %d Stocks %d 30min %d FUll %d",
-    bambuIf, isPrinting, previousIsPrinting, openMeteoIf, proxmoxIf, stocksIf, clockIf, fullRefresh);
+    "Bambu %d Print %d Prev %d openMeteo %d ProxMox %d Stocks %d 30min %d FUll %d retry %d",
+    bambuIf, isPrinting, previousIsPrinting, openMeteoIf, proxmoxIf, stocksIf, clockIf, fullRefresh, pendingApiRetry);
 
   if (needWiFi) {
     if (startWiFiReliable(wifi_ssid, wifi_pass)) {
       DBG("WiFi connected.");
       initTime();
-      if (!hasStoredData || stocksIf || trackingIf) {
-        fetchData();
+      if (!hasStoredData || stocksIf || trackingIf || pendingApiRetry) {
+        bool fetchOk = fetchData();
+        pendingApiRetry = !fetchOk;
+        if (!fetchOk) {
+          if (apiRetryStreak < 255) apiRetryStreak++;
+          DBG("Primary API fetch failed -> forcing retry on next wake");
+        } else {
+          apiRetryStreak = 0;
+        }
 
         DBG("GetObjects");
         infoClock = getLayout(1);
@@ -1502,17 +1536,19 @@ void setup() {
         infoBattery = getLayout(128);
         infoCalendar = getLayout(256);
 
-        eventIf = shouldFetchRefresh(infoEvent);
-        stocksIf = shouldFetchRefresh(infoStocks);
-        openMeteoIf = shouldFetchRefresh(infoOpenMeteo);
-        trackingIf = shouldFetchRefresh(infoTracking);
-        proxmoxIf = shouldFetchRefresh(infoProxMox);
-        bambuIf = infoBambu && infoBambu->Active &&
-          ((isPrinting || previousIsPrinting) && bootCount % infoBambu->Refresh == 0
-           || bootCount % (infoBambu->Refresh * 2) == 0
-           || forceRefreshAfterDemo);
+        if (fetchOk) {
+          eventIf = shouldFetchRefresh(infoEvent);
+          stocksIf = shouldFetchRefresh(infoStocks);
+          openMeteoIf = shouldFetchRefresh(infoOpenMeteo);
+          trackingIf = shouldFetchRefresh(infoTracking);
+          proxmoxIf = shouldFetchRefresh(infoProxMox);
+          bambuIf = infoBambu && infoBambu->Active &&
+            ((isPrinting || previousIsPrinting) && bootCount % infoBambu->Refresh == 0
+             || bootCount % (infoBambu->Refresh * 2) == 0
+             || forceRefreshAfterDemo);
 
-        calendarIf = shouldFetchRefresh(infoCalendar);
+          calendarIf = shouldFetchRefresh(infoCalendar);
+        }
       }
 
       if (bambuIf) 
@@ -1526,6 +1562,10 @@ void setup() {
 
     } else {
       DBG("WiFi FAILED → using cached data");
+      if (!hasStoredData || stocksIf || trackingIf || pendingApiRetry) {
+        pendingApiRetry = true;
+        if (apiRetryStreak < 255) apiRetryStreak++;
+      }
     }
     WiFi.disconnect(true);
     delay(200);
@@ -1602,7 +1642,7 @@ void setup() {
 
       if (openMeteoIf) weatherWidget(infoOpenMeteo);
 
-      if (hasBatteryPin() && infoBattery)
+      if (infoBattery)
         drawStatus(infoBattery);
       DBG("HERE AFTER BATTERY");
 
@@ -1646,7 +1686,7 @@ void setup() {
     if (calendarIf)
       updatePartial(infoCalendar, drawCalendar);
 
-    if (hasBatteryPin() && (batteryIf || forceUpdateStatusBar))
+    if (infoBattery && (batteryIf || forceUpdateStatusBar || apiRetryStreak >= API_RETRY_DISPLAY_THRESHOLD))
       updatePartial(infoBattery, drawStatus);
   }
   bootCount++;
