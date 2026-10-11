@@ -5,17 +5,18 @@ on:
 
 env:
   ESP32_CORE_VERSION: 3.3.12
+  ARDUINO_CLI_VERSION: 1.5.1
 
 jobs:
   # --------------------------------------------------
   # Read FW_VERSION from configure.h, refuse a version already released
   # --------------------------------------------------
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.read.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -37,7 +38,7 @@ jobs:
 
   build:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     strategy:
       fail-fast: false
@@ -80,13 +81,13 @@ jobs:
             extra-cpp-flags: -DUSE_COLORDISPLAY=0 -DUSE_ZIGBEE=1 -DDEFAULT_PIN_PRESET_ESP32C6_SUPERMINI
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ------------------------------
       # Cache Arduino packages
       # ------------------------------
       - name: Cache Arduino packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.arduino15/packages
@@ -98,8 +99,13 @@ jobs:
       # ------------------------------
       # Arduino CLI
       # ------------------------------
+      # arduino/setup-arduino-cli still runs on Node.js 20: use the official install script.
       - name: Setup Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh \
+            | BINDIR="$HOME/.local/bin" sh -s "$ARDUINO_CLI_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install ESP32 Arduino Core
         run: |
@@ -168,32 +174,32 @@ jobs:
       # Upload artifact (still useful)
       # ------------------------------
       - name: Upload firmware artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}-Firmware
           path: firmware
-          retention-days: 365
+          retention-days: 90
 
   # --------------------------------------------------
   # Create release only if ALL builds succeeded
   # --------------------------------------------------
   release:
     needs: [version, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download all firmware artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: firmware
 
       - name: Create release and upload firmware
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: firmware-${{ needs.version.outputs.version }}
           name: ESP32 Firmware Build ${{ needs.version.outputs.version }}
