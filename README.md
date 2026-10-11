@@ -379,7 +379,7 @@ Font tooling and conversion notes are in [fonts/README.md](fonts/README.md): con
 - [directFetch.cpp](directFetch.cpp): data fetching: Open-Meteo, Yahoo Finance, iCal parser, MakerWorld, PKGE tracking, AeroDataBox flight status
 - [fetchAllInfo.cpp](fetchAllInfo.cpp): screen layout and widget drawing
 - [bambulab.cpp](bambulab.cpp): printer status over MQTT
-- [calendar.cpp](calendar.cpp): month calendar widget
+- [monthView.cpp](monthView.cpp): month calendar widget
 - [dash_zigbee.cpp](dash_zigbee.cpp): Zigbee integration
 - [configure.h](configure.h): compile-time options, pin presets, icon constants
 

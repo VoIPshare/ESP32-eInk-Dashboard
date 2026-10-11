@@ -1,6 +1,5 @@
-#include "calendar.h"
+#include "monthView.h"
 #include <time.h>
-#include <ArduinoJson.h>
 
 #define COLS 7
 #define ROWS 6
@@ -25,7 +24,7 @@ int daysInMonth(int year,int month)
   return days[month-1];
 }
 
-int weekdayMonday(struct tm *t)
+static int weekdayMonday(struct tm *t)
 {
   int w=t->tm_wday;
   if(w==0) return 6;

@@ -7,7 +7,7 @@
 #endif
 
 #ifndef FW_VERSION
-#define FW_VERSION          ".61"
+#define FW_VERSION          ".62"
 #endif
 
 // Set to 1 to compile the optional Zigbee controller support.
