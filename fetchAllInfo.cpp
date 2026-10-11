@@ -1,15 +1,18 @@
 #include "app.h"
+#include <ctype.h>
+#include <string.h>
 #include "configure.h"
 #include "fetchAllInfo.h"
-#include <WiFi.h>
-#include <HTTPClient.h>
+#include "bambulab.h"
 #include <Preferences.h>
 
 // Arrays to store the data
 LayoutItem layout[MAXLAYOUTS];       // Adjust size as needed
 StockItem stocks[5];
-TrackingItem tracking[5];
-CalEvents cal;
+RTC_DATA_ATTR LiveFlight liveFlight;
+RTC_DATA_ATTR CalEvents cal;  // survives deep sleep: lets the flight countdown redraw without a download
+RTC_DATA_ATTR TrackingItem tracking[MAX_TRACKING];  // kept in deep sleep, so delivered parcels can expire between fetches
+RTC_DATA_ATTR int trackingCount = 0;
 
 WeatherData weather;
 
@@ -18,7 +21,6 @@ MakerWorld makerworld;
 // Counts
 int layoutCount = 0;
 int stockCount = 0;
-int trackingCount = 0;
 // int calEventCount=0;
 Preferences prefs;
 
@@ -34,256 +36,39 @@ static void drawUnavailableMessage(LayoutItem* item) {
                              "at the moment", GxEPD_BLACK);
 }
 
-void saveLayout() {
-    prefs.begin("ePaper", false);
-    char key[12];
-    for (int i = 0; i < layoutCount; i++) {
-        StaticJsonDocument<1024> doc;
+// Fixed dashboard layout (800x480). A widget is only added when its setting is filled in.
+void loadDefaultLayout() {
+    struct DefaultItem { int id; const char* desc; int x, y, w, h, rowH, colW, refresh; const char* extra1; bool enabled; };
+    const DefaultItem defaults[] = {
+        // Clock Extra1 left empty: updateClock() then uses the Timezone from the setup page.
+        {   1, "Clock",      10,   0, 430, 155, 10,  10,   1, "", true },
+        { 128, "Battery",   440,   0, 360,  28,  0,   0,  60, "", true },
+        { 256, "Calendar",  440,  25, 360, 230, 28, 210,  60, "", true },
+        {   2, "Cal Events",440, 255, 360, 145, 22,  10,  60, "", hasIcsFeeds() },
+        {   4, "Stocks",     10, 155, 430, 130, 22,  10,  60, "", stock_symbols[0] != '\0' },
+        {   8, "OpenMeteo",  10, 285, 430, 105,  0, 100, 360, "", weather_location[0] != '\0' },
+        {  64, "Bambu",      10, 390, 430,  90, 22,  70,   4, printer_name[0] ? printer_name : "Bambu", mqtt_ip[0] != '\0' },
+        {  16, "Tracking",  440, 400, 360,  80, 22,   0, 120, "", pkge_api_key[0] != '\0' },
+    };
 
-        LayoutItem &item = layout[i];
-        doc["ID"] = item.ID;
-        doc["PosX"] = item.PosX;
-        doc["PosY"] = item.PosY;
-        doc["Width"] = item.Width;
-        doc["Height"] = item.Height;
-        doc["RowHeight"] = item.RowHeight;
-        doc["ColWidth"] = item.ColWidth;
-        doc["Refresh"] = item.Refresh;
-        doc["Group"] = item.Group;
-        doc["Active"] = item.Active;
-        doc["Description"] = item.Description;
-        doc["Extra1"] = item.Extra1;
-        doc["Extra2"] = item.Extra2;
-        doc["Extra3"] = item.Extra3;
-        doc["Extra4"] = item.Extra4;
-        doc["Extra5"] = item.Extra5;
-
-        char buffer[1024];
-        size_t n = serializeJson(doc, buffer);
-        // prefs.putBytes(("layout" + String(i)).c_str(), buffer, n);
-        snprintf(key, sizeof(key), "layout%d", i);
-        prefs.putBytes(key, buffer, n);
-
+    layoutCount = 0;
+    for (const DefaultItem& d : defaults) {
+        if (!d.enabled) continue;
+        LayoutItem& l = layout[layoutCount++];
+        memset(&l, 0, sizeof(l));
+        l.ID = d.id;
+        l.PosX = d.x;
+        l.PosY = d.y;
+        l.Width = d.w;
+        l.Height = d.h;
+        l.RowHeight = d.rowH;
+        l.ColWidth = d.colW;
+        l.Refresh = d.refresh;
+        l.Active = true;
+        snprintf(l.Description, sizeof(l.Description), "%s", d.desc);
+        snprintf(l.Extra1, sizeof(l.Extra1), "%s", d.extra1);
     }
-
-    prefs.putInt("layoutCount", layoutCount);
-    prefs.end();
 }
-
-bool loadLayout() {
-    prefs.begin("ePaper", true);
-
-    layoutCount = prefs.getInt("layoutCount", 0);
-    if (layoutCount == 0) {
-      prefs.end();
-      return false;  // Nothing loaded
-    }
-
-    for (int i = 0; i < layoutCount; i++) {
-        char buffer[1024];
-        char key[12];
-        snprintf(key, sizeof(key), "layout%d", i);
-        size_t size = prefs.getBytesLength(key);
-        prefs.getBytes(key, buffer, size);
-        // size_t size = prefs.getBytesLength(("layout" + String(i)).c_str());
-        if (size == 0) continue;
-
-        
-        // prefs.getBytes(("layout" + String(i)).c_str(), buffer, size);
-
-        StaticJsonDocument<1024> doc;
-        deserializeJson(doc, buffer);
-
-        LayoutItem &item = layout[i];
-        item.ID = doc["ID"] | 0;
-        item.PosX = doc["PosX"] | 0;
-        item.PosY = doc["PosY"] | 0;
-        item.Width = doc["Width"] | 0;
-        item.Height = doc["Height"] | 0;
-        item.RowHeight = doc["RowHeight"] | 0;
-        item.ColWidth = doc["ColWidth"] | 0;
-        item.Refresh = doc["Refresh"] | 0;
-        item.Group = doc["Group"] | 0;
-        item.Active = doc["Active"] | false;
-        copyJsonString(item.Description, sizeof(item.Description), doc["Description"]);
-        copyJsonString(item.Extra1, sizeof(item.Extra1), doc["Extra1"]);
-        copyJsonString(item.Extra2, sizeof(item.Extra2), doc["Extra2"]);
-        copyJsonString(item.Extra3, sizeof(item.Extra3), doc["Extra3"]);
-        copyJsonString(item.Extra4, sizeof(item.Extra4), doc["Extra4"]);
-        copyJsonString(item.Extra5, sizeof(item.Extra5), doc["Extra5"]);
-    }
-
-    prefs.end();
-    return true;
-}
-
-// ----------------------- Fetch data from Google Script -----------------------
-// This endpoint is the "single source of truth" for layout + multi-widget data.
-// Layout is cached in Preferences so we can render something even when Wi-Fi fails.
-bool fetchData() {
-    stockCount = layoutCount = trackingCount = cal.eventCount = weather.count = 0;
-    makerworld = {0, 0, 0, 0, 0, 0, false};
-
-    if (WiFi.status() != WL_CONNECTED) return false;
-
-    const char* apiUrl = getApiUrl();
-    if (!apiUrl || apiUrl[0] == '\0') {
-        Serial.println("API URL unavailable");
-        return false;
-    }
-
-    HTTPClient http;
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.setTimeout(28000);
-    Serial.println(apiUrl);
-    http.begin(apiUrl);
-
-    int httpCode = http.GET();
-    if (httpCode != 200) {
-        Serial.printf("HTTP GET failed, code %d\n", httpCode);
-        http.end();
-        return false;
-    }
-
-    String payload = http.getString();
-    const size_t capacity = 60 * 1024;
-    DynamicJsonDocument doc(capacity);
-
-    if (deserializeJson(doc, payload)) {
-        Serial.println("JSON parse failed!");
-        http.end();
-        return false;
-    }
-
-    http.end();
-
-    // ----------------------- Parse Layout -----------------------
-    // Layout drives widget placement, refresh cadence, and per-widget parameters (Extra1..Extra5).
-    if (doc["layout"].is<JsonArray>()  && doc["layout"].size() > 0 ) {
-        layoutCount = 0;
-        for (JsonObject item : doc["layout"].as<JsonArray>()) {
-            if (layoutCount >= MAXLAYOUTS ) break;
-            LayoutItem &l = layout[layoutCount];
-            l.ID = item["ID"] | 0;
-            l.PosX = item["PosX"] | 0;
-            l.PosY = item["PosY"] | 0;
-            l.Width = item["Width"] | 0;
-            l.Height = item["Height"] | 0;
-            l.RowHeight = item["Row_Height"] | 0;
-            l.ColWidth = item["Col_Width"] | 0;
-            l.Group = item["Group"] | 0;
-            l.Active = item["Active"] | false;
-            l.Refresh = item["Refresh"] | 0;
-
-            snprintf(l.Description, sizeof(l.Description), "%s", item["Description"] | "");
-            snprintf(l.Extra1, sizeof(l.Extra1), "%s", item["Extra1"] | "");
-            snprintf(l.Extra2, sizeof(l.Extra2), "%s", item["Extra2"] | "");
-            snprintf(l.Extra3, sizeof(l.Extra3), "%s", item["Extra3"] | "");
-            snprintf(l.Extra4, sizeof(l.Extra4), "%s", item["Extra4"] | "");
-            snprintf(l.Extra5, sizeof(l.Extra5), "%s", item["Extra5"] | "");
-
-            layoutCount++;
-        }
-        DBGF( "Layout Count %d\n",layoutCount);
-    }
-
-    // ----------------------- Parse Stocks -----------------------
-    if (doc["stocks"].is<JsonArray>()) {
-        stockCount = 0;
-        for (JsonObject item : doc["stocks"].as<JsonArray>()) {
-            if ( stockCount >= MAX_STOCKS ) break;
-            StockItem &s = stocks[stockCount];
-            // s.name = item["name"] | "";
-            snprintf(s.name, sizeof(s.name), "%s", item["name"] | "");
-            s.price = item["price"] | 0.0f;
-            s.dayLow = item["dayLow"] | 0.0f;
-            s.dayHigh = item["dayHigh"] | 0.0f;
-            s.prevClose = item["prevClose"] | 0.0f;
-            s.fiftyTwoWeekHigh = item["fiftyTwoWeekHigh"] | 0.0f;
-            s.fiftyTwoWeekLow = item["fiftyTwoWeekLow"] | 0.0f;
-            stockCount++;
-        }
-    }
-
-    // ----------------------- Parse Tracking -----------------------
-    if (doc["tracking"].is<JsonArray>()) {
-        trackingCount = 0;
-        for (JsonObject item : doc["tracking"].as<JsonArray>()) {
-            if ( trackingCount >= MAX_TRACKING ) break;
-            TrackingItem &t = tracking[trackingCount];
-            snprintf(t.tracking,       sizeof(t.tracking),       "%s", item["tracking"]       | "");
-            snprintf(t.status,         sizeof(t.status),          "%s", item["status"]         | "");
-            snprintf(t.deliveryStatus, sizeof(t.deliveryStatus),  "%s", item["deliveryStatus"] | "");
-            snprintf(t.lastChecked,    sizeof(t.lastChecked),     "%s", item["lastChecked"]    | "");
-            t.cached = item["cached"] | false;
-            trackingCount++;
-        }
-    }
-
-    // ----------------------- Parse Calendar Events -----------------------
-    // Calendar timestamps are parsed to epoch seconds; rendering uses current TZ.
-    if (doc["calEvents"]["next24hEvents"].is<JsonArray>()) {
-        cal.eventCount = 0;
-        for (int i = 0; i < doc["calEvents"]["next24hEvents"].size() && i < 10; i++) {
-            JsonObject ev = doc["calEvents"]["next24hEvents"][i].as<JsonObject>();
-            copyJsonString(cal.next24hEvents[i].title,
-                           sizeof(cal.next24hEvents[i].title),
-                           ev["title"]);
-            cal.next24hEvents[i].start = parseISO8601(ev["start"] | "");
-            cal.next24hEvents[i].end = parseISO8601(ev["end"] | "");
-            cal.next24hEvents[i].allDay = ev["allDay"] | false;
-            cal.eventCount++;
-        }
-    }
-    // DBG(F("Days With Events"));
-    if (doc["calEvents"]["daysWithEvents"].is<JsonArray>()) {
-        int k = 0;
-        int maxDays = sizeof(cal.daysWithEvents) / sizeof(cal.daysWithEvents[0]); // 31
-        for (int i = 0; i < doc["calEvents"]["daysWithEvents"].size() && k < maxDays; i++) {
-            cal.daysWithEvents[k++] = doc["calEvents"]["daysWithEvents"][i].as<int>();
-        }
-        cal.daysCount = k; // optional: store how many days were actually read
-    }
-
-    // ------------------ Weather parsing ------------------
-    if (doc["weather"].is<JsonArray>()) {
-        weather.count = 0;
-        for (JsonObject w : doc["weather"].as<JsonArray>()) {
-            if (weather.count >= MAXWEATHERDAYS) break;
-            WeatherDay &wd = weather.day[weather.count];
-
-            snprintf(wd.sunrise, sizeof(wd.sunrise), "%s", w["sunrise"] | "");
-            snprintf(wd.sunset,  sizeof(wd.sunset),  "%s", w["sunset"]  | "");
-            wd.temp_max = w["temp_max"] | 0.0f;
-            wd.temp_min = w["temp_min"] | 0.0f;
-            wd.weather_code = w["weather_code"] | 0;
-            wd.icon = weatherCodeToMDI(wd.weather_code);
-
-            weather.count++;
-        }
-        Serial.printf("Weather count %d\n", weather.count);
-    }
-
-    // ------------------ fetchData() update ------------------
-    // After parsing weather, add:
-
-    if (doc["makerworld"].is<JsonObject>()) {
-        JsonObject mw = doc["makerworld"].as<JsonObject>();
-        makerworld.likes       = mw["total"]["likes"]       | 0;
-        makerworld.downloads   = mw["total"]["downloads"]   | 0;
-        makerworld.prints      = mw["total"]["prints"]      | 0;
-        makerworld.collections = mw["total"]["collections"] | 0;
-        makerworld.boosts      = mw["total"]["boosts"]      | 0;
-        makerworld.available   = true;
-        // Optional: parse lastUpdated
-        const char* ts = mw["lastUpdated"] | "";
-        makerworld.lastUpdated = parseISO8601(ts);
-        saveMakerWorld(); 
-    }
-    saveLayout();
-    return true;
-}
-
 
 #if DEBUG
 void debugPrintLayout() {
@@ -317,36 +102,6 @@ void debugPrintLayout() {
 }
 #endif
 
-// ----------------------- Time parsing -----------------------
-// Parse a basic "YYYY-MM-DDTHH:MM:SS" timestamp as UTC and return epoch seconds.
-// Note: this function mutates the global TZ temporarily.
-time_t parseISO8601(const char* str) {
-    // Save and restore the *actual* current TZ instead:
-    const char* savedTZ = getenv("TZ");
-
-    struct tm t = {0};
-    if (sscanf(str, "%d-%d-%dT%d:%d:%d",
-               &t.tm_year, &t.tm_mon, &t.tm_mday,
-               &t.tm_hour, &t.tm_min, &t.tm_sec) != 6) return 0;
-
-    t.tm_year -= 1900;
-    t.tm_mon  -= 1;
-
-    // Treat the incoming timestamp as UTC.
-    setenv("TZ", "UTC0", 1); 
-    tzset();
-    time_t epoch = mktime(&t);
-
-    // Restore a default TZ (clock widget can still override TZ later).
-    if (savedTZ) setenv("TZ", savedTZ, 1);
-    else unsetenv("TZ");
-
-    // setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
-    tzset();
-
-    return epoch;
-}
-
 void formatTimeRange(time_t start, time_t end, char* buf, size_t bufLen)
 {
     if (!buf || bufLen == 0) return;
@@ -370,11 +125,140 @@ int findLayoutIndexByID(int id) {
   return -1;
 }
 
+// ----------------------- Flights in the calendar -----------------------
+
+static bool isUpperWordAt(const char* p, int len) {
+  for (int i = 0; i < len; i++)
+    if (!isupper((unsigned char)p[i])) return false;
+  return !isalnum((unsigned char)p[len]);
+}
+
+// "TS399", "AC 871": 2-character airline code (letters/digits, not both digits), 1-4 digit number.
+// When `out` is given, the number is copied there without the space.
+static bool findFlightNumber(const char* t, char* out, size_t outSize) {
+  for (const char* p = t; *p; p++) {
+    if (p != t && isalnum((unsigned char)p[-1])) continue;  // must start a word
+    unsigned char a = p[0], b = a ? p[1] : 0;
+    if (!(isupper(a) || isdigit(a)) || !(isupper(b) || isdigit(b))) continue;
+    if (isdigit(a) && isdigit(b)) continue;
+    const char* q = p + 2;
+    if (*q == ' ') q++;
+    int digits = 0;
+    while (isdigit((unsigned char)q[digits])) digits++;
+    if (digits >= 1 && digits <= 4 && !isalnum((unsigned char)q[digits])) {
+      if (out && outSize > 0) snprintf(out, outSize, "%c%c%.*s", a, b, digits, q);
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool hasFlightNumber(const char* t) { return findFlightNumber(t, nullptr, 0); }
+
+bool extractFlightNumber(const char* title, char* out, size_t outSize) {
+  return title && findFlightNumber(title, out, outSize);
+}
+
+// "PUJ->YUL", "YUL - YYZ", "YUL→YYZ", "YUL to YYZ", "YUL/YYZ": two airport codes with a separator.
+static bool hasRoute(const char* t) {
+  for (const char* p = t; *p; p++) {
+    if (p != t && isalnum((unsigned char)p[-1])) continue;
+    if (!isUpperWordAt(p, 3)) continue;
+    const char* q = p + 3;
+    bool separator = false;
+    for (;;) {
+      if (*q == ' ' || *q == '-' || *q == '>' || *q == '/') { q++; separator = true; }
+      else if ((unsigned char)q[0] == 0xE2 && (unsigned char)q[1] == 0x86 && (unsigned char)q[2] == 0x92) { q += 3; separator = true; }  // →
+      else if (q[0] == 't' && q[1] == 'o' && q[2] == ' ') { q += 3; separator = true; }
+      else break;
+    }
+    if (separator && isUpperWordAt(q, 3)) return true;
+  }
+  return false;
+}
+
+bool isFlightTitle(const char* t) {
+  if (!t || !*t) return false;
+  if (strcasestr(t, "flight") || strstr(t, "\xE2\x9C\x88")) return true;  // "flight" or ✈
+  return hasFlightNumber(t) && hasRoute(t);
+}
+
+// Small airplane (about 18x14 px) pointing right, vertically centered on a text line at baseline y.
+static void drawPlaneIcon(int16_t x, int16_t y) {
+  int16_t cy = y - 6;
+  display.fillRect(x + 1, cy - 1, 15, 3, GxEPD_BLACK);                            // fuselage
+  display.fillTriangle(x + 16, cy - 1, x + 16, cy + 1, x + 18, cy, GxEPD_BLACK);   // nose
+  display.fillTriangle(x + 6, cy, x + 11, cy, x + 5, cy - 7, GxEPD_BLACK);         // upper wing
+  display.fillTriangle(x + 6, cy, x + 11, cy, x + 5, cy + 7, GxEPD_BLACK);         // lower wing
+  display.fillTriangle(x + 1, cy, x + 4, cy, x + 1, cy - 4, GxEPD_BLACK);          // tail
+}
+
+// "in 45m", "in 3h05m", "in 2d 4h".
+static void formatCountdown(time_t secs, char* buf, size_t n) {
+  if (secs < 3600)       snprintf(buf, n, "in %ldm", (long)(secs / 60));
+  else if (secs < 86400) snprintf(buf, n, "in %ldh%02ldm", (long)(secs / 3600), (long)((secs % 3600) / 60));
+  else                   snprintf(buf, n, "in %ldd %ldh", (long)(secs / 86400), (long)((secs % 86400) / 3600));
+}
+
+static void formatClock(time_t t, char* buf, size_t n) {
+  struct tm lt;
+  localtime_r(&t, &lt);
+  strftime(buf, n, "%H:%M", &lt);
+}
+
+// One line summarizing the live status, e.g. "Delayed +45m, gate B7, Terminal B" or "Landed 19:12".
+// The real departure/arrival times are shown on the flight's first line instead.
+static void formatLiveFlight(char* buf, size_t n) {
+  const LiveFlight& f = liveFlight;
+  char arr[8];
+  formatClock(f.arrActual ? f.arrActual : f.arrScheduled, arr, sizeof(arr));
+  long delayMin = (f.depActual && f.depScheduled) ? (long)(f.depActual - f.depScheduled) / 60 : 0;
+
+  if (!strcmp(f.status, "Canceled"))          { snprintf(buf, n, "CANCELED"); return; }
+  if (!strcmp(f.status, "CanceledUncertain")) { snprintf(buf, n, "Possibly canceled"); return; }
+  if (!strcmp(f.status, "Diverted"))          { snprintf(buf, n, "Diverted"); return; }
+  if (!strcmp(f.status, "Arrived"))           { snprintf(buf, n, "Landed %s", arr); return; }
+  if (!strcmp(f.status, "Departed") || !strcmp(f.status, "EnRoute") || !strcmp(f.status, "Approaching")) {
+    snprintf(buf, n, "In the air, lands %s", arr);
+    return;
+  }
+
+  const char* label = "Scheduled";
+  if (!strcmp(f.status, "Expected"))   label = "On time";
+  if (!strcmp(f.status, "CheckIn"))    label = "Check-in";
+  if (!strcmp(f.status, "Boarding"))   label = "Boarding";
+  if (!strcmp(f.status, "GateClosed")) label = "Gate closed";
+  if (!strcmp(f.status, "Delayed") || delayMin >= 5) label = "Delayed";
+
+  int len = snprintf(buf, n, "%s", label);
+  if (delayMin >= 5 && len < (int)n) len += snprintf(buf + len, n - len, " +%ldm", delayMin);
+  if (f.depGate[0] && len < (int)n) len += snprintf(buf + len, n - len, ", gate %s", f.depGate);
+  if (f.depTerminal[0] && len < (int)n) {
+    bool numeric = true;
+    for (const char* c = f.depTerminal; *c; c++) if (!isdigit((unsigned char)*c)) numeric = false;
+    snprintf(buf + len, n - len, numeric ? ", T%s" : ", Terminal %s", f.depTerminal);
+  }
+}
+
 void gCalWidget( LayoutItem* item )
 {
   int lastDay = -1;
+  time_t now = time(nullptr);
 
-  int y = item->PosY+30;
+  int y = item->PosY + 16;  // baseline of the first line, at the top of the widget
+  bool firstLine = true;
+
+  // A flight later than the next 24 hours is pinned on top with a countdown.
+  const CalEventItem& flight = cal.nextFlight;
+  if (flight.start > now + 86400) {
+    char countdown[24], line[CFG_CAL_TITLE_MAX + 40];
+    formatCountdown(flight.start - now, countdown, sizeof(countdown));
+    snprintf(line, sizeof(line), "%s  %s", flight.title, countdown);
+    drawPlaneIcon(item->PosX, y);
+    drawSparseString(&epaperFont, item->PosX + 24, y, line, GxEPD_BLACK);
+    y += item->RowHeight;
+    firstLine = false;
+  }
 
   for (size_t i = 0; i < cal.eventCount; i++)
   {
@@ -384,7 +268,8 @@ void gCalWidget( LayoutItem* item )
     // If new day → print day header
     if (t.tm_mday != lastDay)
     {
-      y+=5;
+      if (!firstLine) y += 5;  // small gap between days
+      firstLine = false;
       lastDay = t.tm_mday;
 
       char dayBuf[32];
@@ -395,13 +280,49 @@ void gCalWidget( LayoutItem* item )
       y += item->RowHeight+5;
     }
 
-    char timeRange[32];
-    formatTimeRange(cal.next24hEvents[i].start, cal.next24hEvents[i].end,
-                    timeRange, sizeof(timeRange));
-    char line[CFG_CAL_TITLE_MAX + 40];
-    snprintf(line, sizeof(line), "%s %s", timeRange, cal.next24hEvents[i].title);
+    // Stop before spilling into the widget below.
+    if (y > item->PosY + item->Height) break;
 
-    drawSparseString(&epaperFont, item->PosX, y, line, GxEPD_BLACK);
+    const CalEventItem& ev = cal.next24hEvents[i];
+    bool live = liveFlight.valid && ev.start == liveFlight.calStart && isFlightTitle(ev.title);
+    char timeRange[32];
+    if (live && liveFlight.depScheduled && liveFlight.arrScheduled)
+      // Real departure/arrival (delays included) instead of the calendar's times.
+      formatTimeRange(liveFlight.depActual ? liveFlight.depActual : liveFlight.depScheduled,
+                      liveFlight.arrActual ? liveFlight.arrActual : liveFlight.arrScheduled,
+                      timeRange, sizeof(timeRange));
+    else if (ev.allDay)
+      snprintf(timeRange, sizeof(timeRange), "All day");
+    else
+      formatTimeRange(ev.start, ev.end, timeRange, sizeof(timeRange));
+    char line[CFG_CAL_TITLE_MAX + 64];
+    int n = snprintf(line, sizeof(line), "%s %s", timeRange, ev.title);
+
+    int16_t x = item->PosX;
+    if (isFlightTitle(ev.title)) {
+      // Flights get a plane icon and a countdown to departure.
+      drawPlaneIcon(x, y);
+      x += 24;
+      // Count down to the real departure (delays included) when live data is available.
+      time_t departs = ev.start;
+      if (liveFlight.valid && ev.start == liveFlight.calStart)
+        departs = liveFlight.depActual ? liveFlight.depActual : liveFlight.depScheduled;
+      if (departs > now && n > 0 && n < (int)sizeof(line)) {
+        char countdown[24];
+        formatCountdown(departs - now, countdown, sizeof(countdown));
+        snprintf(line + n, sizeof(line) - n, "  %s", countdown);
+      }
+    }
+    drawSparseString(&epaperFont, x, y, line, GxEPD_BLACK);
+
+    // Live status (AeroDataBox) on a second line under the flight.
+    if (x != item->PosX && liveFlight.valid && ev.start == liveFlight.calStart &&
+        y + item->RowHeight <= item->PosY + item->Height) {
+      y += item->RowHeight;
+      char live[96];
+      formatLiveFlight(live, sizeof(live));
+      drawSparseString(&epaperFont, x, y, live, GxEPD_BLACK);
+    }
 
     y += item->RowHeight;
   }
@@ -452,39 +373,61 @@ void stockWidget( LayoutItem* item )
     }
 }
 
-void trackingWidget( LayoutItem* item ) 
-{
-    DBG(F("Tracking: Widget"));
-    int y = item->PosY+10; // starting Y position
-
-    for (size_t i = 0; i < trackingCount; i++) {
-        TrackingItem& s = tracking[i];
-
-        uint32_t icon = 0xF053E;
-
-        if (strcmp(s.status, "delivered") == 0)
-            icon = 0xF1B52;   // package delivered icon
-        else if (strcmp(s.deliveryStatus, "in_transit") == 0)
-          icon = 0xF0788; // Trucking moving
-        drawSparseChar(&MDI_22_Sparse, item->PosX, y,icon,GxEPD_BLACK );
-
-        drawSparseString(&epaperFont, item->PosX + 30, y, s.tracking, GxEPD_BLACK);
-
-        drawSparseString(&epaperFont, item->PosX + 130, y, s.deliveryStatus, GxEPD_BLACK);
-        y+=item->RowHeight;
-        drawSparseString(&epaperFont, item->PosX,y, s.status, GxEPD_BLACK);
-
-        y+=item->RowHeight;
-    }
-
-}
-
 LayoutItem* getLayout(uint16_t id) {
   int idx = findLayoutIndexByID(id);
   return (idx != -1) ? &layout[idx] : nullptr;
 }
 
 // ------------------ Weather widget ------------------
+static const char* trackingStatusLabel(int status) {
+    switch (status) {
+        case -1: case 0: case 1: return "Checking";
+        case 2: return "No info yet";
+        case 3: return "In transit";
+        case 4: return "At pickup point";
+        case 5: return "Delivered";
+        case 6: return "Not delivered";
+        case 7: return "Delivery error";
+        case 8: return "Preparing";
+        case 9: return "Route ended";
+        default: return "Unknown";
+    }
+}
+
+// One line per parcel: icon, end of the tracking number, status and estimated delivery.
+void trackingWidget(LayoutItem* item) {
+    if (!item) return;
+    int y = item->PosY + 18;
+    if (trackingCount == 0) {
+        drawSparseString(&epaperFont, item->PosX, y, "No packages being tracked", GxEPD_BLACK);
+        return;
+    }
+
+    for (int i = 0; i < trackingCount; i++) {
+        if (y > item->PosY + item->Height) break;
+        const TrackingItem& t = tracking[i];
+
+        uint32_t icon = 0xF053E;                                   // package
+        if (t.status == 3 || t.status == 8) icon = 0xF0788;        // truck
+        else if (t.status == 5) icon = 0xF1B52;                    // package delivered
+        else if (t.status == 6 || t.status == 7) icon = MDI_ALERT;
+        drawSparseChar(&MDI_22_Sparse, item->PosX, y + 2, icon, GxEPD_BLACK);
+
+        // The last 8 characters are enough to recognize a parcel.
+        size_t len = strlen(t.trackNumber);
+        const char* tail = len > 8 ? t.trackNumber + len - 8 : t.trackNumber;
+        char line[64];
+        int n = snprintf(line, sizeof(line), "%s  %s", tail, trackingStatusLabel(t.status));
+        if (t.status != 5 && t.estDelivery > 0 && n > 0 && n < (int)sizeof(line)) {
+            struct tm et;
+            localtime_r(&t.estDelivery, &et);
+            strftime(line + n, sizeof(line) - n, "  ETA %b %d", &et);
+        }
+        drawSparseString(&epaperFont, item->PosX + 28, y, line, GxEPD_BLACK);
+        y += item->RowHeight;
+    }
+}
+
 void weatherWidget(LayoutItem* item) {
     if (!item) return;
     if (weather.count <= 0) {
@@ -533,9 +476,10 @@ uint32_t weatherCodeToMDI(int code) {
 
 void makerWorldWidget(LayoutItem* item) {
     if (!item) return;
-    loadMakerWorld(); 
+    loadMakerWorld();
     if (!makerworld.available) {
-        drawUnavailableMessage(item);
+        // No MakerWorld stats yet (no user ID, or never fetched): show the idle printer status instead.
+        bambuWidget(item);
         return;
     }
 

@@ -55,6 +55,14 @@ struct PrinterStatus {
 
 extern RTC_DATA_ATTR bool isPrinting;
 extern RTC_DATA_ATTR bool previousIsPrinting;
+extern bool printViewOnScreen;
+extern bool bambuAuthRejected;  // last connect failed because the LAN access code was refused
+
+// Keep showing the printer status for this long after a print ends, then switch to MakerWorld stats.
+#define PRINT_FINISHED_HOLD_S  (5 * 60)
+
+// True while printing and during the PRINT_FINISHED_HOLD_S window after a print ends.
+bool showPrintView();
 
 bool fetchBambu(  LayoutItem*  );
 void bambuWidget(LayoutItem* );

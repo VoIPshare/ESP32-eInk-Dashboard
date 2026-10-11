@@ -5,10 +5,10 @@
 
 #define MAXLAYOUTS      15
 #define MAXWEATHERDAYS  7  // adjust as needed
-#define MAX_TRACKING    5
 #define MAX_STOCKS      5
+#define MAX_TRACKING    5
 
-// Structures for layout, stocks, and tracking (existing)
+// Structures for layout and widget data
 struct LayoutItem {
   char Description[64];
   int ID;
@@ -39,12 +39,28 @@ struct StockItem {
   float fiftyTwoWeekLow;
 };
 
+// One parcel from the PKGE account (see fetchTrackingDirect).
 struct TrackingItem {
-  char tracking[40];
-  char status[32];
-  char deliveryStatus[32];
-  char lastChecked[32];
-  bool cached;
+  char trackNumber[40];
+  int status;            // PKGE status code: 3 in transit, 4 at pickup point, 5 delivered, ...
+  time_t lastDate;       // date of the latest checkpoint
+  time_t estDelivery;    // estimated delivery date, 0 if unknown
+};
+
+// Live status of the next flight from the calendar (AeroDataBox), kept in RTC memory.
+struct LiveFlight {
+  char number[12];       // "TS399", taken from the calendar title
+  char title[CFG_CAL_TITLE_MAX];
+  time_t calStart;       // departure time in the calendar (identifies the flight)
+  time_t calEnd;         // end time of the calendar event (expected landing if no live data)
+  time_t lastFetch;
+  uint8_t requests;      // AeroDataBox requests made for this flight (capped)
+  bool valid;            // live data received
+  char status[20];       // AeroDataBox status: Expected, CheckIn, Boarding, Departed, Delayed, Arrived, ...
+  time_t depScheduled, depActual;   // UTC; "actual" = revised/runway time when known, else 0
+  time_t arrScheduled, arrActual;
+  char depGate[8];
+  char depTerminal[8];
 };
 
 struct CalEventItem {
@@ -59,6 +75,7 @@ struct CalEvents {
   int daysCount;
   CalEventItem next24hEvents[10];
   int eventCount;
+  CalEventItem nextFlight;   // earliest flight not yet over (calendar end in the future) within 7 days; start == 0: none
 };
 
 // ------------------ New: Weather ------------------
@@ -99,21 +116,29 @@ extern int stockCount;
 extern LayoutItem layout[MAXLAYOUTS];
 extern int layoutCount;
 
-extern TrackingItem tracking[5];
-extern int trackingCount;
 
 extern CalEvents cal;
+
+extern TrackingItem tracking[MAX_TRACKING];
+extern int trackingCount;
 
 // New weather globals
 extern WeatherData weather;
 
 extern uint16_t bootCount;
 
-bool fetchData();
 void gCalWidget(LayoutItem*);
 void stockWidget(LayoutItem*);
-void trackingWidget(LayoutItem*);
 void weatherWidget(LayoutItem*); // new widget
+void trackingWidget(LayoutItem*);
+
+// True for calendar titles that look like a flight: "TS399 PUJ->YUL", "AC 871 YUL to YYZ",
+// "Flight to Toronto (AC 871)".
+bool isFlightTitle(const char* title);
+// Copies the flight number ("TS399", spaces removed) from a title; false if there is none.
+bool extractFlightNumber(const char* title, char* out, size_t outSize);
+
+extern LiveFlight liveFlight;
 
 int findLayoutIndexByID(int);
 
@@ -121,9 +146,7 @@ int findLayoutIndexByID(int);
 void debugPrintLayout();
 #endif
 
-void saveLayout();
-bool loadLayout();
-time_t parseISO8601(const char*);
+void loadDefaultLayout();
 void formatTimeRange(time_t start, time_t end, char* buf, size_t bufLen);
 LayoutItem* getLayout(uint16_t);
 

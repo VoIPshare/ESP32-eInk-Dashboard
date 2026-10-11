@@ -11,11 +11,22 @@ PrinterStatus printer;
 // int received=0;
 RTC_DATA_ATTR bool isPrinting=false;
 RTC_DATA_ATTR bool previousIsPrinting=false;
+RTC_DATA_ATTR time_t printFinishedAt = 0;     // when the last print ended (0 = no recent print)
+RTC_DATA_ATTR bool printViewOnScreen = false; // the printer status (not MakerWorld) is currently drawn
+
+bool showPrintView() {
+  if (isPrinting) return true;
+  return printFinishedAt != 0 && time(nullptr) - printFinishedAt < PRINT_FINISHED_HOLD_S;
+}
 // --- MQTT ---
 // This module keeps only a short-lived MQTT connection per wake cycle:
 // connect → subscribe → process a few seconds of messages → disconnect.
 WiFiClientSecure wifiClient;
 PubSubClient client(wifiClient);
+
+// Set once a full status report (one that carries gcode_state) has been parsed this wake.
+static bool gotReport = false;
+bool bambuAuthRejected = false;
 
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -31,6 +42,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   JsonObject print = doc["print"];
   if (!print) return;
+
+  // Idle P-series printers mostly send small deltas; only a full report (the pushall answer)
+  // carries gcode_state. Ignore deltas so they don't overwrite the full status with zeros.
+  if (gotReport || print["gcode_state"].isNull()) return;
 
   // -------- Progress --------
   printer.layer_num = print["3D"]["layer_num"] | 0;
@@ -121,6 +136,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
       }
     }
   }
+  gotReport = true;
   DBG(F("[Bambu] Retrived the informations"));
 }
 
@@ -139,9 +155,9 @@ void bambuWidget(LayoutItem* item)
 {
   DBG( F("[Bambu] UPDATING......") );
   char buf[40];
-  int X_POS;
   int margin_x=5;
   int baseX = item->PosX + margin_x;
+  int X_POS = baseX;  // was uninitialized, so the first row was drawn at a random X
   int baseY = item->PosY;
   int y = baseY + item->RowHeight/2 + 5;
 
@@ -248,8 +264,19 @@ static void connectMqtt( LayoutItem * infoBambu) {
           char reportTopic[96];
           snprintf(reportTopic, sizeof(reportTopic), "device/%s/report", mqtt_sn);
           client.subscribe(reportTopic);
+
+          // Ask the printer for its full status right away.
+          char requestTopic[96];
+          snprintf(requestTopic, sizeof(requestTopic), "device/%s/request", mqtt_sn);
+          client.publish(requestTopic, "{\"pushing\":{\"sequence_id\":\"0\",\"command\":\"pushall\"}}");
       } else {
         DBGF("[Bambu]: MQTT fail rc=%d retry %d/5\n", client.state(), retries+1);
+        // rc 4/5 = bad credentials or not authorized (wrong LAN access code): retrying won't help.
+        if (client.state() == MQTT_CONNECT_BAD_CREDENTIALS || client.state() == MQTT_CONNECT_UNAUTHORIZED) {
+          DBG(F("[Bambu] Access code rejected - check the LAN access code in setup"));
+          bambuAuthRejected = true;
+          break;
+        }
         retries++;
         delay(2000);
       }
@@ -273,7 +300,8 @@ bool fetchBambu(  LayoutItem* infoBambu  )
   previousIsPrinting=isPrinting;
   // NOTE: setInsecure() disables certificate validation (MITM risk).
   wifiClient.setInsecure();
-  client.setBufferSize(20000);
+  client.setBufferSize(32768);  // a full pushall report can exceed 20 KB with an AMS attached
+  gotReport = false;
   DBGF("[Bambu]: IP %s Port %d\n", mqtt_ip, mqtt_port );
   client.setServer(mqtt_ip, mqtt_port);
   client.setCallback(callback);
@@ -282,9 +310,14 @@ bool fetchBambu(  LayoutItem* infoBambu  )
   bool connected = client.connected();
   if (connected) {
     unsigned long start = millis();
-    while ( millis() - start < 3000) {  // wait up to 4 seconds
+    while (!gotReport && millis() - start < 6000) {  // wait up to 6 seconds for the pushall answer
       client.loop();
       delay(10);
+    }
+    DBGF("[Bambu] Full report %s after %lu ms", gotReport ? "received" : "NOT received", millis() - start);
+    if (gotReport) {
+      if (isPrinting) printFinishedAt = 0;
+      else if (previousIsPrinting) printFinishedAt = time(nullptr);  // print just ended
     }
   } else {
     DBG(F("[Bambu]: MQTT never connected, skipping loop"));
@@ -292,7 +325,7 @@ bool fetchBambu(  LayoutItem* infoBambu  )
 
   client.disconnect();   // <-- CLOSE MQTT connection
   wifiClient.stop();
-  return connected;
+  return connected && gotReport;
 }
 
 bool isAuxFanOn() {

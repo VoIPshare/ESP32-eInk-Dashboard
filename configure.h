@@ -7,7 +7,7 @@
 #endif
 
 #ifndef FW_VERSION
-#define FW_VERSION          ".40"
+#define FW_VERSION          ".61"
 #endif
 
 // Set to 1 to compile the optional Zigbee controller support.
@@ -145,8 +145,8 @@ inline gpio_num_t getDemoWakeGpio() {
   return static_cast<gpio_num_t>(activePins.demoButton);
 }
 
-#define BUTTON_HOLD_MS       2000     // 2 seconds hold enter demo mode
-#define BUTTON_LONG_HOLD_MS  6000     // 6 seconds hold force reconfigure
+#define BUTTON_REBOOT_HOLD_MS 2000    // hold 2 seconds (then release) to reboot the dashboard
+#define BUTTON_SETUP_HOLD_MS  4000    // hold 4 seconds to open setup mode
 
 inline constexpr uint32_t MDI_FAN_COOLING  = 0x000F1797;
 inline constexpr uint32_t MDI_FAN_EXHAUST  = 0x000F0D43;
