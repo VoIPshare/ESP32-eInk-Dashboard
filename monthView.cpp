@@ -41,8 +41,8 @@ void drawCalendar(LayoutItem* item)
   int today = t->tm_mday;
 
   // Month title, weekday row, then the day grid, with some air between them.
-  const int dowY = 26 + textSpace;  // weekday baseline
-  const int headerH = 48;           // the day grid starts here
+  const int dowY = 30 + textSpace;  // weekday baseline
+  const int headerH = 56;           // the day grid starts here
   int cellW = item->Width / COLS;
   int cellH = (item->Height - headerH) / ROWS;
 
