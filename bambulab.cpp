@@ -295,7 +295,8 @@ static void connectMqtt( LayoutItem * infoBambu) {
 bool fetchBambu(  LayoutItem* infoBambu  )
 {
   DBG( F("[Bambu] Fetching"));
-    DBGF("[Bambu] MQTT Pass %s MQTT_SN %s MQTT_IP %s MQTT_PORT %d", mqtt_pass, mqtt_sn, mqtt_ip, mqtt_port );
+    // The access code is a secret: only say whether it is set.
+    DBGF("[Bambu] Access code %s MQTT_SN %s MQTT_IP %s MQTT_PORT %d", mqtt_pass[0] ? "set" : "MISSING", mqtt_sn, mqtt_ip, mqtt_port );
 
   if (mqtt_pass[0] == '\0' || mqtt_sn[0] == '\0' || mqtt_ip[0] == '\0' || mqtt_port == 0)
   {

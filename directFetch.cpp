@@ -674,7 +674,10 @@ static bool readIcsFeed(const char* url, IcsWindow& w) {
 
   int code = http.GET();
   if (code != 200) {
-    DBGF("[ICS] HTTP %d for %s", code, url);
+    // A private iCal link works like a password: log only its host.
+    const char* host = strstr(url, "://");
+    host = host ? host + 3 : url;
+    DBGF("[ICS] HTTP %d for %.*s", code, (int)strcspn(host, "/"), host);
     http.end();
     return false;
   }
