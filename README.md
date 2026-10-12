@@ -28,7 +28,7 @@ The ESP32 fetches every widget's data itself, directly from each service:
 | Upcoming events (next 24 h), flights highlighted | up to 3 iCal feeds, merged | iCal URL | every hour (flight countdown: every 10 min) |
 | Weather (4 days) | [Open-Meteo](https://open-meteo.com/) | city or coordinates | every 6 hours |
 | Stocks (up to 5) | Yahoo Finance | ticker symbols | every hour |
-| Bambu Lab printer | the printer, over local MQTT | printer IP, serial, access code | every 4 min while printing, 8 min idle |
+| Bambu Lab printer | the printer, over local MQTT | printer IP, serial, access code | every 4 min while printing, 10 min idle |
 | MakerWorld stats | Bambu's MakerWorld API | MakerWorld user ID | every hour (idle only) |
 | Package tracking (up to 3 lines) | [PKGE](https://business.pkge.net) | PKGE API key | every 2 hours |
 | Live flight status (optional) | [AeroDataBox](https://rapid.aerodatabox.com) via RapidAPI | RapidAPI key | on the day of a flight: every 30 min, every 10 min around departure and landing |
@@ -207,6 +207,9 @@ The 800×480 screen is split like this:
 
 - The device sleeps between updates and wakes **about half a second after every minute starts**. The clock is redrawn first, before any network activity, so the new minute appears within about 2 seconds. A quiet minute keeps the board awake for about 2 seconds.
 - Wi-Fi is only turned on when a widget is due for new data (see the table at the top). The time is re-synced over NTP at least once an hour, because the internal clock drifts during deep sleep.
+- To save battery, wakes that only redraw the clock run the CPU at 80 MHz, and Wi-Fi reconnects straight to the access point used last time instead of scanning every channel.
+- If Wi-Fi can't connect, the device waits before trying again: 2, 4, 8, 16, then 30 minutes. A button tap always tries right away.
+- If the printer doesn't answer (usually because it's off), it's retried once at the next wake, then only at its normal polling interval.
 - Widgets are updated with partial refreshes. A full screen refresh, which removes ghosting, happens once a day, after setup, and after a button wake.
 - If a download fails, the widget keeps showing its previous content instead of going blank.
 

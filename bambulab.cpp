@@ -278,6 +278,12 @@ static void connectMqtt( LayoutItem * infoBambu) {
           break;
         }
         retries++;
+        // No TCP/TLS connection at all: the printer is off or unreachable. One retry is enough;
+        // each further attempt keeps the radio on for several seconds.
+        if (client.state() == MQTT_CONNECT_FAILED && retries >= 2) {
+          DBG(F("[Bambu] Printer unreachable"));
+          break;
+        }
         delay(2000);
       }
   }

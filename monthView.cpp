@@ -40,7 +40,9 @@ void drawCalendar(LayoutItem* item)
   int month = t->tm_mon + 1;
   int today = t->tm_mday;
 
-  int headerH = 28;
+  // Month title, weekday row, then the day grid, with some air between them.
+  const int dowY = 26 + textSpace;  // weekday baseline
+  const int headerH = 48;           // the day grid starts here
   int cellW = item->Width / COLS;
   int cellH = (item->Height - headerH) / ROWS;
 
@@ -53,7 +55,7 @@ void drawCalendar(LayoutItem* item)
   for (int i = 0; i < 7; i++)
   {
     int x = item->PosX + i * cellW + cellW / 2;
-    drawSparseStringCentered(&epaperFont, x, item->PosY + 20 + textSpace, daysHeader[i], GxEPD_BLACK);
+    drawSparseStringCentered(&epaperFont, x, item->PosY + dowY, daysHeader[i], GxEPD_BLACK);
   }
 
   // ---- First weekday of month ----
@@ -72,7 +74,8 @@ void drawCalendar(LayoutItem* item)
       if (index >= start && d <= total)
       {
         int x = item->PosX + c * cellW + cellW / 2;
-        int y = item->PosY + headerH + r * cellH + cellH / 2 + 10;
+        // Text baseline: the circles (drawn at y - 5) are centered in their cell.
+        int y = item->PosY + headerH + r * cellH + cellH / 2 + 5;
 
         char buf[4];
         sprintf(buf, "%d", d);

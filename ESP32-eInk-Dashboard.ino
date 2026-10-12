@@ -81,11 +81,16 @@ RTC_DATA_ATTR int8_t zigbee_aux_last_command = -1;
 #endif
 
 unsigned long previousMillis = 0;
+static uint32_t cpuFullMhz = 240;  // the board's default CPU clock, restored for Wi-Fi work
 
 RTC_DATA_ATTR uint16_t bootCount = 0;
 RTC_DATA_ATTR bool lastPrint = false;
 RTC_DATA_ATTR bool pendingBambuRetry = false;
 RTC_DATA_ATTR time_t lastNtpSync = 0;
+// After a failed Wi-Fi connection (router off, out of range) wait before trying again, longer
+// after each failure, instead of keeping the radio on for up to a minute on every wake.
+RTC_DATA_ATTR uint8_t wifiFailures = 0;
+RTC_DATA_ATTR time_t wifiRetryAfter = 0;
 
 // Problems listed in the top bar. Each flag is set when that source fails, cleared on its
 // next success, and kept across deep sleep.
@@ -113,6 +118,9 @@ static void setProblem(uint16_t flag, bool active) {
 
 #define NTP_RESYNC_S          (60 * 60)   // re-sync internet time at least hourly
 #define WAKE_AFTER_MINUTE_MS  500         // wake this long after each minute starts
+#define BAMBU_IDLE_REFRESH_MIN 10         // printer poll while idle: a divisor of 60, so it shares
+                                          // the Wi-Fi session of the hourly fetches
+#define WIFI_BACKOFF_MAX_S    (30 * 60)   // longest wait between attempts while Wi-Fi keeps failing
 #define FLIGHT_LIVE_BEFORE_S  (6 * 3600)  // live flight status starts 6 h before departure
 #define FLIGHT_LIVE_REFRESH_S (30 * 60)   // and is refreshed every 30 minutes until landing,
 #define FLIGHT_LIVE_FAST_S    (10 * 60)   // every 10 minutes within an hour of departure or landing
@@ -1389,6 +1397,7 @@ ESP.restart();
 
 
 void startAP() {
+  setCpuFrequencyMhz(cpuFullMhz);
   apModeActive = true;
   apLastActivity = millis();
 
@@ -1528,9 +1537,41 @@ static void buttonWatchTask(void*) {
   }
 }
 
+// Access point of the last successful connection, kept across deep sleep. Connecting with a known
+// channel and BSSID skips the scan of every channel, which keeps the radio on for seconds.
+RTC_DATA_ATTR uint8_t wifiBssid[6];
+RTC_DATA_ATTR int32_t wifiChannel = 0;  // 0 = unknown, scan
+
+static bool waitForWiFi(unsigned long timeoutMs) {
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    if (millis() - start > timeoutMs) return false;
+    delay(20);
+  }
+  DBGF("WiFi connected in %lu ms", millis() - start);
+  return true;
+}
+
 bool startWiFiReliable(const char* ssid, const char* password)
 {
   DBG(F("startWiFiReliable called"));
+
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(false);   // IMPORTANT: disable during manual connect
+  WiFi.setSleep(false);
+
+  // Fast path: straight to the access point used last time.
+  if (wifiChannel > 0) {
+    DBGF("WiFi fast connect, channel %d", (int)wifiChannel);
+    WiFi.begin(ssid, password, wifiChannel, wifiBssid);
+    if (waitForWiFi(5000)) {
+      WiFi.setAutoReconnect(true); // enable AFTER connection
+      return true;
+    }
+    DBG(F("Fast connect failed, scanning"));
+    wifiChannel = 0;  // the router moved or changed channel: forget it
+  }
 
   for (int attempt = 1; attempt <= 2; attempt++)
   {
@@ -1539,35 +1580,21 @@ bool startWiFiReliable(const char* ssid, const char* password)
     // FULL STOP FIRST
     WiFi.disconnect(true, true);
     WiFi.mode(WIFI_OFF);
-    delay(500);
+    delay(100);
 
     // THEN re-init cleanly
     WiFi.mode(WIFI_STA);
-    delay(100);
-
     WiFi.persistent(false);
-    WiFi.setAutoReconnect(false);   // IMPORTANT: disable during manual connect
+    WiFi.setAutoReconnect(false);
     WiFi.setSleep(false);
-
-    delay(500);
 
     WiFi.begin(ssid, password);
 
-    unsigned long start = millis();
-
-    while (WiFi.status() != WL_CONNECTED)
+    if (waitForWiFi(20000))
     {
-      if (millis() - start > 20000)
-        break;
-
-      delay(500);
-      Serial.print(".");
-    }
-
-    if (WiFi.status() == WL_CONNECTED)
-    {
-      DBG(F("\nWiFi connected!"));
       DBG(WiFi.localIP());
+      memcpy(wifiBssid, WiFi.BSSID(), sizeof(wifiBssid));
+      wifiChannel = WiFi.channel();
 
       WiFi.setAutoReconnect(true); // enable AFTER connection
       return true;
@@ -1643,13 +1670,21 @@ bool startWiFiReliable(const char* ssid, const char* password)
 // Setup
 // =======================
 void setup() {
+  // Most wakes only redraw the clock: run them at 80 MHz, and go back to full speed only when
+  // Wi-Fi is needed (TLS handshakes are CPU bound, so the radio would stay on longer at 80 MHz).
+  cpuFullMhz = getCpuFrequencyMhz();
+  setCpuFrequencyMhz(80);
+
   Serial.begin(115200);
+  bool coldBoot = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED;
 #if DEBUG
   // After a reset / flash (not a timer wake) give the USB serial monitor time to attach.
-  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) delay(3000);
+  if (coldBoot) delay(3000);
 #endif
 #if CONFIG_IDF_TARGET_ESP32
-  delay(2000);
+  // Only after power-up / reset: waking from deep sleep needs no settle time, and this
+  // ran on every minute's wake.
+  if (coldBoot) delay(2000);
 #endif
 
   if (activePinPreset == PinPreset::Esp32C6SuperMini) {
@@ -1755,7 +1790,6 @@ void setup() {
     xTaskCreate(buttonWatchTask, "button", 3072, nullptr, 2, nullptr);
   }
 
-  delay(200);
 // DBGF("Wifi %s Pass %s", wifi_ssid.c_str(), wifi_pass.c_str());
 
   // Start an AP and server to configure it
@@ -1826,7 +1860,8 @@ void setup() {
   bool eventRedraw = infoEvent && (flightSoon || liveWindow) && !eventIf && (bootCount % 10 == 0);
   bool batteryIf = shouldFetchRefresh(infoBattery);
   bool calendarIf = shouldFetchRefresh(infoCalendar);
-  bool bambuIf = (infoBambu && infoBambu->Active && (((isPrinting || previousIsPrinting) && (bootCount % infoBambu->Refresh == 0)) || (bootCount % (infoBambu->Refresh * 2) == 0))) || pendingBambuRetry;
+  bool bambuIf = (infoBambu && infoBambu->Active && (((isPrinting || previousIsPrinting) && (bootCount % infoBambu->Refresh == 0)) || (bootCount % BAMBU_IDLE_REFRESH_MIN == 0))) || pendingBambuRetry;
+  bool bambuRetry = pendingBambuRetry;
   // The 5-minute "print finished" window just ended: redraw so the MakerWorld view replaces the printer view.
   if (infoBambu && printViewOnScreen && !showPrintView()) bambuIf = true;
 
@@ -1854,21 +1889,34 @@ void setup() {
     || makerworldDue
     || ntpDue;
 
+  // Wi-Fi failed recently: keep the previous content until the backoff ends (a button wake
+  // always tries).
+  if (needWiFi && wifiFailures && nowTs < wifiRetryAfter &&
+      esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_EXT1) {
+    DBGF("WiFi backoff: next attempt in %ld s", (long)(wifiRetryAfter - nowTs));
+    needWiFi = false;
+    if (!fullRefresh) openMeteoIf = stocksIf = eventIf = calendarIf = trackingIf = false;
+    bambuIf = makerworldDue = flightStatusDue = false;
+  }
+
   DBGF("Bambu %d Print %d Prev %d Weather %d Stocks %d Events %d Calendar %d MW %d NTP %d Full %d",
        bambuIf, isPrinting, previousIsPrinting, openMeteoIf, stocksIf, eventIf, calendarIf,
        makerworldDue, ntpDue, fullRefresh);
 
   if (needWiFi) {
+    setCpuFrequencyMhz(cpuFullMhz);
     if (startWiFiReliable(wifi_ssid, wifi_pass)) {
       DBG("WiFi connected.");
+      wifiFailures = 0;
       setProblem(PROBLEM_WIFI, false);
       initTime();
 
       if (bambuIf)
       {
         bool bambuOk = fetchBambu(infoBambu);
-        // A rejected access code won't fix itself: don't retry (with Wi-Fi) on every wake.
-        pendingBambuRetry = !bambuOk && !bambuAuthRejected;
+        // Retry once at the next wake; after that wait for the next scheduled poll (the printer is
+        // probably off). A rejected access code won't fix itself: don't retry it at all.
+        pendingBambuRetry = !bambuOk && !bambuAuthRejected && !bambuRetry;
         setProblem(PROBLEM_PRINTER_CODE, !bambuOk && bambuAuthRejected);
         setProblem(PROBLEM_PRINTER, !bambuOk && !bambuAuthRejected);
         signalPrintTransition();
@@ -1927,13 +1975,17 @@ void setup() {
     } else {
       DBG("WiFi FAILED → keeping the previous content");
       setProblem(PROBLEM_WIFI, true);
+      if (wifiFailures < 255) wifiFailures++;
+      // 2, 4, 8, 16, then 30 minutes between attempts.
+      time_t backoff = wifiFailures >= 5 ? WIFI_BACKOFF_MAX_S : (time_t)60 << wifiFailures;
+      if (backoff > WIFI_BACKOFF_MAX_S) backoff = WIFI_BACKOFF_MAX_S;
+      wifiRetryAfter = time(nullptr) + backoff;
       if (!fullRefresh) openMeteoIf = stocksIf = eventIf = calendarIf = trackingIf = false;
       if (bambuIf) pendingBambuRetry = true;
     }
     WiFi.disconnect(true);
-    delay(200);
     WiFi.mode(WIFI_OFF);
-
+    setCpuFrequencyMhz(80);
   }
 
 #if USE_ZIGBEE
